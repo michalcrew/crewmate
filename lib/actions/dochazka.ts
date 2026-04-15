@@ -135,37 +135,51 @@ export async function saveDochazka(formData: FormData) {
   return { success: true }
 }
 
+const dochazkaAuthSchema = z.object({
+  prirazeni_id: z.string().uuid("Neplatné ID přiřazení"),
+  akce_id: z.string().uuid("Neplatné ID akce"),
+  brigadnik_id: z.string().uuid("Neplatné ID brigádníka"),
+  prichod: z.string().optional(),
+  odchod: z.string().optional(),
+  hodnoceni: z.coerce.number().int().min(1).max(5).optional(),
+  poznamka: z.string().optional(),
+})
+
 export async function saveDochazkaAuth(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  // Auth users don't need PIN — remove it from validation and add directly
   const raw = Object.fromEntries(formData.entries())
+  const parsed = dochazkaAuthSchema.safeParse(raw)
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
+
   const adminClient = createAdminClient()
 
   const { data: existing } = await adminClient
     .from("dochazka")
     .select("id")
-    .eq("prirazeni_id", raw.prirazeni_id as string)
+    .eq("prirazeni_id", parsed.data.prirazeni_id)
     .single()
 
   const dochazkaData = {
-    prichod: (raw.prichod as string) || null,
-    odchod: (raw.odchod as string) || null,
-    hodnoceni: raw.hodnoceni ? Number(raw.hodnoceni) : null,
-    poznamka: (raw.poznamka as string) || null,
+    prichod: parsed.data.prichod || null,
+    odchod: parsed.data.odchod || null,
+    hodnoceni: parsed.data.hodnoceni || null,
+    poznamka: parsed.data.poznamka || null,
   }
 
   if (existing) {
-    await adminClient.from("dochazka").update(dochazkaData).eq("id", existing.id)
+    const { error } = await adminClient.from("dochazka").update(dochazkaData).eq("id", existing.id)
+    if (error) return { error: "Nepodařilo se uložit docházku" }
   } else {
-    await adminClient.from("dochazka").insert({
-      prirazeni_id: raw.prirazeni_id as string,
-      akce_id: raw.akce_id as string,
-      brigadnik_id: raw.brigadnik_id as string,
+    const { error } = await adminClient.from("dochazka").insert({
+      prirazeni_id: parsed.data.prirazeni_id,
+      akce_id: parsed.data.akce_id,
+      brigadnik_id: parsed.data.brigadnik_id,
       ...dochazkaData,
     })
+    if (error) return { error: "Nepodařilo se uložit docházku" }
   }
 
   return { success: true }

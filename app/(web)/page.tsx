@@ -1,9 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
+import { KontaktForm } from "@/components/web/kontakt-form"
 import {
   ArrowRight, Users, Ticket, ShirtIcon, Sparkles, Shield,
   Trash2, Clapperboard, HeadphonesIcon, CheckCircle,
@@ -270,45 +268,7 @@ export default function HomePage() {
               </div>
             </div>
             <div>
-              <div className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-sm">
-                <h3 className="text-lg font-bold mb-2">Nezávazná poptávka</h3>
-                <p className="text-sm text-gray-500 mb-6">Vyplňte formulář a ozveme se do 24 hodin.</p>
-                <form className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="c-name">Jméno a příjmení *</Label>
-                      <Input id="c-name" required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="c-company">Firma / organizace</Label>
-                      <Input id="c-company" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="c-email">Email *</Label>
-                      <Input id="c-email" type="email" required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="c-phone">Telefon *</Label>
-                      <Input id="c-phone" required />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="c-message">S čím Vám můžeme pomoci? *</Label>
-                    <Textarea id="c-message" rows={4} required />
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <input type="checkbox" id="c-gdpr" required className="h-4 w-4 mt-0.5 rounded" />
-                    <Label htmlFor="c-gdpr" className="font-normal text-xs text-gray-500">
-                      Souhlasím se zpracováním osobních údajů za účelem zodpovězení mé poptávky.
-                    </Label>
-                  </div>
-                  <Button type="submit" size="lg" className="w-full bg-[#1a1a4e] hover:bg-[#2a2a6e] text-white rounded-full">
-                    Odeslat poptávku
-                  </Button>
-                </form>
-              </div>
+              <KontaktForm />
             </div>
           </div>
         </div>

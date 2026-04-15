@@ -28,8 +28,11 @@ export async function getBrigadnici(filter?: {
   }
 
   if (filter?.search) {
-    const s = filter.search
-    query = query.or(`jmeno.ilike.%${s}%,prijmeni.ilike.%${s}%,email.ilike.%${s}%,telefon.ilike.%${s}%`)
+    // Escape PostgREST special characters to prevent filter injection
+    const s = filter.search.replace(/[%_,.()"'\\]/g, "")
+    if (s.length > 0) {
+      query = query.or(`jmeno.ilike.%${s}%,prijmeni.ilike.%${s}%,email.ilike.%${s}%,telefon.ilike.%${s}%`)
+    }
   }
 
   const { data, error } = await query
