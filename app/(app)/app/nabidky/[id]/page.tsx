@@ -86,7 +86,7 @@ export default async function NabidkaDetailPage({
         />
       </div>
 
-      {(nabidka.popis_prace || nabidka.pozadavky) && (
+      {(nabidka.popis_prace || nabidka.pozadavky || nabidka.koho_hledame || nabidka.co_nabizime) && (
         <Card>
           <CardHeader>
             <CardTitle>Detail</CardTitle>
@@ -95,13 +95,25 @@ export default async function NabidkaDetailPage({
             {nabidka.popis_prace && (
               <div>
                 <span className="text-muted-foreground">Popis práce:</span>
-                <p className="mt-1">{nabidka.popis_prace}</p>
+                <p className="mt-1 whitespace-pre-wrap">{nabidka.popis_prace}</p>
+              </div>
+            )}
+            {nabidka.koho_hledame && (
+              <div>
+                <span className="text-muted-foreground">Koho hledáme:</span>
+                <p className="mt-1 whitespace-pre-wrap">{nabidka.koho_hledame}</p>
               </div>
             )}
             {nabidka.pozadavky && (
               <div>
                 <span className="text-muted-foreground">Požadavky:</span>
-                <p className="mt-1">{nabidka.pozadavky}</p>
+                <p className="mt-1 whitespace-pre-wrap">{nabidka.pozadavky}</p>
+              </div>
+            )}
+            {nabidka.co_nabizime && (
+              <div>
+                <span className="text-muted-foreground">Co nabízíme:</span>
+                <p className="mt-1 whitespace-pre-wrap">{nabidka.co_nabizime}</p>
               </div>
             )}
           </CardContent>

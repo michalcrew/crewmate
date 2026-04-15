@@ -99,8 +99,18 @@ export default function NovaNabidkaPage() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="koho_hledame">Koho hledáme</Label>
+              <Textarea id="koho_hledame" name="koho_hledame" placeholder="Popis hledaných pozic, ideální kandidát..." rows={2} />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="pozadavky">Požadavky</Label>
               <Textarea id="pozadavky" name="pozadavky" placeholder="Zkušenosti, věk, jazyk..." rows={2} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="co_nabizime">Co nabízíme</Label>
+              <Textarea id="co_nabizime" name="co_nabizime" placeholder="Odměna, benefity, zázemí..." rows={2} />
             </div>
 
             <div className="flex items-center gap-2">

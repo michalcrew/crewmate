@@ -93,10 +93,24 @@ export default async function NabidkaPublicPage({
             </div>
           )}
 
+          {nabidka.koho_hledame && (
+            <div className="mb-8">
+              <h2 className="text-lg font-bold mb-3">Koho hledáme</h2>
+              <p className="text-gray-600 whitespace-pre-wrap leading-relaxed">{nabidka.koho_hledame}</p>
+            </div>
+          )}
+
           {nabidka.pozadavky && (
             <div className="mb-8">
               <h2 className="text-lg font-bold mb-3">Požadavky</h2>
               <p className="text-gray-600 whitespace-pre-wrap leading-relaxed">{nabidka.pozadavky}</p>
+            </div>
+          )}
+
+          {nabidka.co_nabizime && (
+            <div className="mb-8">
+              <h2 className="text-lg font-bold mb-3">Co nabízíme</h2>
+              <p className="text-gray-600 whitespace-pre-wrap leading-relaxed">{nabidka.co_nabizime}</p>
             </div>
           )}
         </div>
