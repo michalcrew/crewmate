@@ -143,22 +143,27 @@ export default function HomePage() {
           <h2 className="text-3xl md:text-5xl font-black mb-4">Obsadíme každou roli<br className="hidden sm:block" />vašeho eventu</h2>
           <p className="text-gray-600 mb-12 max-w-lg">Kompletní týmy pro akce jakékoliv velikosti.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {SERVICES.map((s) => (
-              <div key={s.num} className="bg-white rounded-xl p-6 border border-gray-100 hover:border-[#000066]/20 hover:shadow-lg transition-all">
-                <div className="flex items-start gap-3 mb-3">
-                  <span className="text-xs text-gray-400 font-mono mt-1">{s.num}</span>
-                  <div>
-                    <h3 className="font-bold text-lg mb-1">{s.title}</h3>
-                    <p className="text-sm text-gray-600 mb-3">{s.desc}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {s.tags.map((t) => (
-                        <span key={t} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{t}</span>
-                      ))}
-                    </div>
+            {SERVICES.map((s, i) => {
+              const icons = [Users, HeadphonesIcon, Clapperboard, Sparkles]
+              const Icon = icons[i] ?? Users
+              return (
+              <div key={s.num} className="bg-white rounded-xl p-8 border border-gray-100 hover:border-[#000066]/20 hover:shadow-lg transition-all">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="h-12 w-12 rounded-full bg-[#000066]/5 flex items-center justify-center shrink-0">
+                    <Icon className="h-5 w-5 text-[#000066]" />
                   </div>
+                  <span className="text-sm text-gray-400 font-mono">{s.num}</span>
+                </div>
+                <h3 className="font-bold text-xl mb-2">{s.title}</h3>
+                <p className="text-sm text-gray-600 mb-4">{s.desc}</p>
+                <div className="flex flex-wrap gap-2">
+                  {s.tags.map((t) => (
+                    <span key={t} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{t}</span>
+                  ))}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </section>
