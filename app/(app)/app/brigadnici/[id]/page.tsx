@@ -21,6 +21,7 @@ import {
   getBrigadnikHistorie,
 } from "@/lib/actions/brigadnici"
 import { PIPELINE_STATES, DPP_STATES } from "@/lib/constants"
+import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button"
 
 export const metadata: Metadata = {
   title: "Detail brigádníka",
@@ -65,6 +66,11 @@ export default async function BrigadnikDetailPage({
             )}
           </div>
         </div>
+        {!brigadnik.dotaznik_vyplnen && (
+          <div className="ml-auto">
+            <SendDotaznikButton brigadnikId={brigadnik.id} />
+          </div>
+        )}
       </div>
 
       <Tabs defaultValue="prehled">
