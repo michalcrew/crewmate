@@ -49,7 +49,7 @@ export default async function BrigadnikDetailPage({
       <div className="flex items-center gap-3 mb-6">
         <Link href="/app/brigadnici">
           <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4" /><span className="sr-only">Zpět</span>
           </Button>
         </Link>
         <div>

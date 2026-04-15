@@ -6,7 +6,7 @@ export default function AppLayout({
 }: {
   children: React.ReactNode
 }) {
-  // TODO: F-0003 — auth guard (redirect to /login if not authenticated)
+  // Auth guard is handled by middleware.ts
   return (
     <div className="dark min-h-screen">
       <Sidebar />

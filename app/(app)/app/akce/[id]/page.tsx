@@ -38,7 +38,7 @@ export default async function AkceDetailPage({
     <div>
       <div className="flex items-center gap-3 mb-6">
         <Link href="/app/akce">
-          <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /><span className="sr-only">Zpět</span></Button>
         </Link>
         <div>
           <h1 className="text-2xl font-semibold">{akce.nazev}</h1>
