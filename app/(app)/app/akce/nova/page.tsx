@@ -46,7 +46,7 @@ export default function NovaAkcePage() {
                 <Input id="cas_do" name="cas_do" type="time" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="misto">Místo</Label>
                 <Input id="misto" name="misto" placeholder="např. SaSaZu, Praha 7" />

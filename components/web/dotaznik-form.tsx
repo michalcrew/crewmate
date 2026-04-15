@@ -40,7 +40,7 @@ export function DotaznikForm({ token, defaultValues }: Props) {
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="token" value={token} />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="jmeno">Jméno *</Label>
               <Input id="jmeno" name="jmeno" defaultValue={defaultValues.jmeno} required />
@@ -51,7 +51,7 @@ export function DotaznikForm({ token, defaultValues }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="rodne_cislo">Rodné číslo *</Label>
               <Input id="rodne_cislo" name="rodne_cislo" placeholder="000000/0000" required />
@@ -62,7 +62,7 @@ export function DotaznikForm({ token, defaultValues }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="rodne_jmeno">Rodné jméno</Label>
               <Input id="rodne_jmeno" name="rodne_jmeno" />
@@ -88,7 +88,7 @@ export function DotaznikForm({ token, defaultValues }: Props) {
             <Input id="korespondencni_adresa" name="korespondencni_adresa" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="cislo_op">Číslo OP *</Label>
               <Input id="cislo_op" name="cislo_op" required />
@@ -104,7 +104,7 @@ export function DotaznikForm({ token, defaultValues }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="cislo_uctu">Číslo účtu *</Label>
               <Input id="cislo_uctu" name="cislo_uctu" required />

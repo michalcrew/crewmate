@@ -9,6 +9,7 @@ import { getNabidkaById } from "@/lib/actions/nabidky"
 import { getPipelineByNabidka } from "@/lib/actions/pipeline"
 import { PipelineBoard } from "@/components/pipeline/pipeline-board"
 import { PIPELINE_STATES } from "@/lib/constants"
+import { EditNabidkaDialog } from "@/components/nabidky/edit-nabidka-dialog"
 
 export const metadata: Metadata = {
   title: "Detail nabídky",
@@ -57,6 +58,9 @@ export default async function NabidkaDetailPage({
               <span className="text-sm text-muted-foreground">| {nabidka.odmena}</span>
             )}
           </div>
+        </div>
+        <div className="ml-auto">
+          <EditNabidkaDialog nabidka={nabidka} />
         </div>
       </div>
 

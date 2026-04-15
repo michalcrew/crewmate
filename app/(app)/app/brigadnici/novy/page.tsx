@@ -34,7 +34,7 @@ export default function NovyBrigadnikPage() {
         </CardHeader>
         <CardContent>
           <form action={formAction} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="jmeno">Jméno *</Label>
                 <Input id="jmeno" name="jmeno" required />
@@ -45,7 +45,7 @@ export default function NovyBrigadnikPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email *</Label>
                 <Input id="email" name="email" type="email" required />

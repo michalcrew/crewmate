@@ -41,7 +41,7 @@ export default function NovaNabidkaPage() {
               <Input id="nazev" name="nazev" placeholder="např. Obsluha šatny — Sasazu" required />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="typ">Typ</Label>
                 <select name="typ" id="typ" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
@@ -60,7 +60,7 @@ export default function NovaNabidkaPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="klient">Klient</Label>
                 <Input id="klient" name="klient" placeholder="např. SaSaZu Club" />
@@ -71,7 +71,7 @@ export default function NovaNabidkaPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="odmena">Odměna</Label>
                 <Input id="odmena" name="odmena" placeholder="např. 180 Kč/hod" />
@@ -82,7 +82,7 @@ export default function NovaNabidkaPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="datum_od">Datum od</Label>
                 <Input id="datum_od" name="datum_od" type="date" />
