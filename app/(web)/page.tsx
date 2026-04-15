@@ -172,13 +172,28 @@ export default function HomePage() {
       <section className="py-16 md:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <p className="text-xs font-semibold text-[#000066] uppercase tracking-widest mb-3">Jak pracujeme</p>
-          <h2 className="text-3xl md:text-5xl font-black mb-12">Stavíme funkční týmy</h2>
+          <h2 className="text-3xl md:text-5xl font-black mb-6">Stavíme funkční týmy</h2>
           <p className="text-gray-600 mb-12 max-w-lg">Jsme partner, který staví funkční týmy pro vaše akce.</p>
+
+          {/* Photo grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
+            <div className="md:col-span-2 aspect-[16/10] rounded-xl overflow-hidden relative">
+              <Image src="/images/events/signal-1.jpg" alt="Crewmate na SIGNAL festivalu" fill className="object-cover" sizes="(max-width: 768px) 100vw, 66vw" />
+            </div>
+            <div className="grid grid-rows-2 gap-4">
+              <div className="aspect-[16/10] rounded-xl overflow-hidden relative">
+                <Image src="/images/events/event-2.jpg" alt="Crewmate barman" fill className="object-cover" sizes="(max-width: 768px) 100vw, 33vw" />
+              </div>
+              <div className="aspect-[16/10] rounded-xl overflow-hidden relative">
+                <Image src="/images/events/event-3.jpg" alt="Crewmate tým" fill className="object-cover" sizes="(max-width: 768px) 100vw, 33vw" />
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {HOW_WE_WORK.map((item) => (
-              <div key={item.title} className="text-center">
-                <item.icon className="h-8 w-8 text-[#000066] mx-auto mb-3" />
-                <h3 className="font-bold mb-1">{item.title}</h3>
+              <div key={item.title} className="border border-gray-200 rounded-xl p-6">
+                <h3 className="font-bold mb-2">{item.title}</h3>
                 <p className="text-sm text-gray-600">{item.desc}</p>
               </div>
             ))}
