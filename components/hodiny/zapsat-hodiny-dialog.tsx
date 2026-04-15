@@ -80,6 +80,15 @@ export function ZapsatHodinyDialog() {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="zh-misto">Odkud pracuji *</Label>
+            <select id="zh-misto" name="misto_prace" required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+              <option value="kancelar">Kancelář</option>
+              <option value="remote">Remote (z domu)</option>
+              <option value="akce">Na akci</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="zh-napln">Náplň práce *</Label>
             <Textarea
               id="zh-napln"

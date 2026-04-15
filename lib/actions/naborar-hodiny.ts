@@ -7,6 +7,7 @@ import { z } from "zod"
 const hodinySchema = z.object({
   datum: z.string().min(1, "Datum je povinné"),
   hodin: z.coerce.number().min(0.5, "Minimum 0.5 hodiny").max(24, "Maximum 24 hodin"),
+  misto_prace: z.enum(["kancelar", "remote", "akce"], { message: "Vyberte místo práce" }),
   napln_prace: z.string().min(1, "Náplň práce je povinná"),
   je_zpetny_zapis: z.string().optional(),
   duvod_zpozdeni: z.string().optional(),
@@ -74,6 +75,7 @@ export async function zapsatHodiny(formData: FormData) {
     user_id: profile.id,
     datum: parsed.data.datum,
     hodin: parsed.data.hodin,
+    misto_prace: parsed.data.misto_prace,
     napln_prace: parsed.data.napln_prace,
     je_zpetny_zapis: isLate,
     duvod_zpozdeni: isLate ? parsed.data.duvod_zpozdeni : null,

@@ -103,6 +103,7 @@ export default async function HodinyPage({
                   {isAdmin && <TableHead>Náborářka</TableHead>}
                   <TableHead>Datum</TableHead>
                   <TableHead>Hodin</TableHead>
+                  <TableHead>Místo</TableHead>
                   <TableHead>Náplň práce</TableHead>
                   <TableHead>Stav</TableHead>
                 </TableRow>
@@ -110,7 +111,7 @@ export default async function HodinyPage({
               <TableBody>
                 {(isAdmin ? allHodiny : myHodiny).length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 5 : 4} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={isAdmin ? 6 : 5} className="text-center text-muted-foreground py-8">
                       Žádné záznamy za tento měsíc.
                     </TableCell>
                   </TableRow>
@@ -125,6 +126,13 @@ export default async function HodinyPage({
                       )}
                       <TableCell>{new Date(h.datum).toLocaleDateString("cs-CZ")}</TableCell>
                       <TableCell className="font-semibold">{Number(h.hodin).toFixed(1)}h</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {(h as unknown as { misto_prace?: string }).misto_prace === "kancelar" ? "Kancelář" :
+                           (h as unknown as { misto_prace?: string }).misto_prace === "remote" ? "Remote" :
+                           (h as unknown as { misto_prace?: string }).misto_prace === "akce" ? "Na akci" : "—"}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="max-w-xs truncate">{h.napln_prace}</TableCell>
                       <TableCell>
                         {h.je_zpetny_zapis ? (
