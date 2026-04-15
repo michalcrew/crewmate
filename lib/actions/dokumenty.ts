@@ -158,11 +158,11 @@ export async function sendDppEmail(brigadnikId: string, mesic: string) {
     .single()
 
   const subject = (template?.predmet ?? "DPP k podpisu — {{mesic}} — Crewmate")
-    .replace("{{jmeno}}", brigadnik.jmeno)
-    .replace("{{mesic}}", mesicLabel)
+    .replaceAll("{{jmeno}}", brigadnik.jmeno)
+    .replaceAll("{{mesic}}", mesicLabel)
   const html = (template?.obsah_html ?? `<p>Ahoj ${brigadnik.jmeno}, v příloze DPP na ${mesicLabel}.</p>`)
-    .replace("{{jmeno}}", brigadnik.jmeno)
-    .replace("{{mesic}}", mesicLabel)
+    .replaceAll("{{jmeno}}", brigadnik.jmeno)
+    .replaceAll("{{mesic}}", mesicLabel)
 
   try {
     await sendEmail({ to: brigadnik.email, subject, html })

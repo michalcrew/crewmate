@@ -161,11 +161,11 @@ export async function sendDotaznikEmail(brigadnikId: string) {
     .single()
 
   const subject = (template?.predmet ?? "Doplnění údajů — Crewmate")
-    .replace("{{jmeno}}", brigadnik.jmeno)
+    .replaceAll("{{jmeno}}", brigadnik.jmeno)
   const html = (template?.obsah_html ?? `<p>Ahoj ${brigadnik.jmeno},</p><p><a href="${link}">Doplnit údaje</a></p>`)
-    .replace("{{jmeno}}", brigadnik.jmeno)
-    .replace("{{prijmeni}}", brigadnik.prijmeni)
-    .replace("{{odkaz_formular}}", link)
+    .replaceAll("{{jmeno}}", brigadnik.jmeno)
+    .replaceAll("{{prijmeni}}", brigadnik.prijmeni)
+    .replaceAll("{{odkaz_formular}}", link)
 
   try {
     await sendEmail({ to: brigadnik.email, subject, html })
