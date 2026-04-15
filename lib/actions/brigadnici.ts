@@ -117,6 +117,17 @@ export async function getBrigadnikById(id: string) {
   return data
 }
 
+export async function getBrigadnikZkusenosti(brigadnikId: string) {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("pracovni_zkusenosti")
+    .select("*, akce:akce(nazev, datum)")
+    .eq("brigadnik_id", brigadnikId)
+    .order("datum_od", { ascending: false })
+
+  return data ?? []
+}
+
 export async function getBrigadnikPipeline(brigadnikId: string) {
   const supabase = await createClient()
   const { data, error } = await supabase

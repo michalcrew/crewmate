@@ -19,6 +19,7 @@ import {
   getBrigadnikPipeline,
   getBrigadnikSmluvniStav,
   getBrigadnikHistorie,
+  getBrigadnikZkusenosti,
 } from "@/lib/actions/brigadnici"
 import { PIPELINE_STATES, DPP_STATES } from "@/lib/constants"
 import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button"
@@ -38,10 +39,11 @@ export default async function BrigadnikDetailPage({
   const brigadnik = await getBrigadnikById(id)
   if (!brigadnik) notFound()
 
-  const [pipeline, smluvniStav, historie] = await Promise.all([
+  const [pipeline, smluvniStav, historie, zkusenosti] = await Promise.all([
     getBrigadnikPipeline(id),
     getBrigadnikSmluvniStav(id),
     getBrigadnikHistorie(id),
+    getBrigadnikZkusenosti(id),
   ])
 
   return (
@@ -52,6 +54,11 @@ export default async function BrigadnikDetailPage({
             <ArrowLeft className="h-4 w-4" /><span className="sr-only">Zpět</span>
           </Button>
         </Link>
+        {brigadnik.foto_url && (
+          <div className="h-12 w-12 rounded-full overflow-hidden bg-muted shrink-0">
+            <img src={brigadnik.foto_url} alt="" className="h-full w-full object-cover" />
+          </div>
+        )}
         <div>
           <h1 className="text-2xl font-semibold">
             {brigadnik.jmeno} {brigadnik.prijmeni}
@@ -80,6 +87,7 @@ export default async function BrigadnikDetailPage({
         <TabsList>
           <TabsTrigger value="prehled">Přehled</TabsTrigger>
           <TabsTrigger value="udaje">Osobní údaje</TabsTrigger>
+          <TabsTrigger value="zkusenosti">Zkušenosti ({zkusenosti.length})</TabsTrigger>
           <TabsTrigger value="smluvni">Smluvní stav</TabsTrigger>
           <TabsTrigger value="historie">Historie</TabsTrigger>
         </TabsList>
@@ -172,6 +180,51 @@ export default async function BrigadnikDetailPage({
                   </div>
                 ))}
               </dl>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="zkusenosti" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle>Pracovní zkušenosti</CardTitle></CardHeader>
+            <CardContent>
+              {zkusenosti.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Žádné zkušenosti. Po nahrání CV se automaticky vytěží. Interní akce se zapisují automaticky.</p>
+              ) : (
+                <div className="space-y-3">
+                  {zkusenosti.map((z) => (
+                    <div key={z.id} className="border rounded-lg p-4">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-medium">{z.pozice}</p>
+                          {z.popis && <p className="text-sm text-muted-foreground mt-1">{z.popis}</p>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className={`text-xs ${
+                            z.typ === "interni" ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                          }`}>
+                            {z.typ === "interni" ? "Crewmate" : "Ext. zkušenost"}
+                          </Badge>
+                          {z.zdroj === "cv_ai" && (
+                            <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-400 border-purple-500/20">AI z CV</Badge>
+                          )}
+                        </div>
+                      </div>
+                      {(z.datum_od || z.datum_do) && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {z.datum_od && new Date(z.datum_od).toLocaleDateString("cs-CZ")}
+                          {z.datum_do && ` — ${new Date(z.datum_do).toLocaleDateString("cs-CZ")}`}
+                        </p>
+                      )}
+                      {z.akce && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Akce: {(z.akce as unknown as { nazev: string })?.nazev}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
