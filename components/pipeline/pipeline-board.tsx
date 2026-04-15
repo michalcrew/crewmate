@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import Link from "next/link"
+import { toast } from "sonner"
 import {
   DndContext,
   DragOverlay,
@@ -69,8 +70,14 @@ export function PipelineBoard({
 
     if (currentStav === newStav) return
 
+    const stavLabel = Object.entries(PIPELINE_STATES).find(([k]) => k === newStav)?.[1]?.label ?? newStav
     startTransition(async () => {
-      await updatePipelineStav(entryId, newStav, nabidkaId)
+      const result = await updatePipelineStav(entryId, newStav, nabidkaId)
+      if (result.error) {
+        toast.error(result.error)
+      } else {
+        toast.success(`Stav změněn na: ${stavLabel}`)
+      }
     })
   }
 
