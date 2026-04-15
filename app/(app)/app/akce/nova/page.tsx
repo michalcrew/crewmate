@@ -5,7 +5,7 @@ import { NovaAkceForm } from "@/components/akce/nova-akce-form"
 export const metadata: Metadata = { title: "Nová akce" }
 
 export default async function NovaAkcePage() {
-  const nabidky = await getNabidky({ stav: "aktivni" })
+  const nabidky = await getNabidky()
   const nabidkyOptions = (nabidky ?? []).map(n => ({ id: n.id, nazev: n.nazev }))
 
   return (

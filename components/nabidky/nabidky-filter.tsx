@@ -7,21 +7,21 @@ import { cn } from "@/lib/utils"
 const FILTERS = [
   { value: "vse", label: "Všechny" },
   { value: "aktivni", label: "Aktivní" },
-  { value: "pozastavena", label: "Pozastavené" },
+  { value: "stala", label: "Stálé" },
   { value: "ukoncena", label: "Ukončené" },
 ] as const
 
-export function NabidkyFilter({ currentStav }: { currentStav?: string }) {
+export function NabidkyFilter({ currentFilter }: { currentFilter?: string }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const active = currentStav || "vse"
+  const active = currentFilter || "vse"
 
   function setFilter(value: string) {
     const params = new URLSearchParams(searchParams.toString())
     if (value === "vse") {
-      params.delete("stav")
+      params.delete("filtr")
     } else {
-      params.set("stav", value)
+      params.set("filtr", value)
     }
     router.push(`/app/nabidky?${params.toString()}`)
   }

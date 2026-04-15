@@ -20,20 +20,39 @@ const nabidkaSchema = z.object({
   zverejnena: z.boolean().optional(),
 })
 
-export async function getNabidky(filter?: { stav?: string }) {
+export async function getNabidky(filter?: { filtr?: string }) {
   const supabase = await createClient()
   let query = supabase
     .from("nabidky")
-    .select("*, pipeline_count:pipeline_entries(count)")
+    .select("*, pipeline_entries(id, stav)")
     .order("created_at", { ascending: false })
 
-  if (filter?.stav && filter.stav !== "vse") {
-    query = query.eq("stav", filter.stav)
+  if (filter?.filtr === "aktivni") {
+    query = query.eq("typ", "aktivni").neq("stav", "ukoncena")
+  } else if (filter?.filtr === "stala") {
+    query = query.eq("typ", "stala").neq("stav", "ukoncena")
+  } else if (filter?.filtr === "ukoncena") {
+    query = query.eq("stav", "ukoncena")
   }
 
   const { data, error } = await query
   if (error) throw error
-  return data
+
+  // Aggregate pipeline counts
+  return (data ?? []).map(n => {
+    const entries = (n.pipeline_entries ?? []) as { stav: string }[]
+    return {
+      ...n,
+      pipeline_entries: undefined,
+      stats: {
+        celkem: entries.length,
+        zajemci: entries.filter(e => e.stav === "zajemce").length,
+        prijati: entries.filter(e => ["prijaty_nehotova_admin", "prijaty_vse_vyreseno"].includes(e.stav)).length,
+        vyreseno: entries.filter(e => e.stav === "prijaty_vse_vyreseno").length,
+        odmitnuty: entries.filter(e => e.stav === "odmitnuty").length,
+      }
+    }
+  })
 }
 
 export async function createNabidka(formData: FormData) {

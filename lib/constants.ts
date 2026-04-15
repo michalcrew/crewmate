@@ -4,7 +4,7 @@ export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000
 
 export const NAV_ITEMS = [
   { label: "Dashboard", href: "/app", icon: "LayoutDashboard" },
-  { label: "Nabídky", href: "/app/nabidky", icon: "Briefcase" },
+  { label: "Zakázky", href: "/app/nabidky", icon: "Briefcase" },
   { label: "Brigádníci", href: "/app/brigadnici", icon: "Users" },
   { label: "Akce", href: "/app/akce", icon: "Calendar" },
   { label: "Měsíční přehled", href: "/app/prehled-mesic", icon: "BarChart3" },
@@ -19,6 +19,11 @@ export const PIPELINE_STATES = {
   prijaty_nehotova_admin: { label: "Přijatý — nehotová admin", color: "bg-orange-500/10 text-orange-500" },
   prijaty_vse_vyreseno: { label: "Přijatý — vše vyřešeno", color: "bg-green-500/10 text-green-500" },
   odmitnuty: { label: "Odmítnutý", color: "bg-red-500/10 text-red-500" },
+} as const
+
+export const NABIDKA_TYPY = {
+  aktivni: { label: "Aktivní", color: "bg-blue-500/10 text-blue-500 border-blue-500/20", desc: "Jednorázová akce" },
+  stala: { label: "Stálá", color: "bg-green-500/10 text-green-500 border-green-500/20", desc: "Průběžný nábor" },
 } as const
 
 export const DPP_STATES = {
