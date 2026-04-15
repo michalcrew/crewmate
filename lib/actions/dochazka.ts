@@ -132,7 +132,70 @@ export async function saveDochazka(formData: FormData) {
     if (error) return { error: "Nepodařilo se uložit docházku" }
   }
 
+  // Audit log for attendance
+  await supabase.from("historie").insert({
+    brigadnik_id: parsed.data.brigadnik_id,
+    akce_id: parsed.data.akce_id,
+    typ: "dochazka_zapsana",
+    popis: `Docházka: ${dochazkaData.prichod ?? "—"} – ${dochazkaData.odchod ?? "—"}${dochazkaData.hodnoceni ? `, hodnocení ${dochazkaData.hodnoceni}/5` : ""}`,
+  })
+
+  // Auto-create internal work experience when shift is completed (has both prichod + odchod)
+  if (dochazkaData.prichod && dochazkaData.odchod) {
+    autoLogInternalExperience(
+      parsed.data.brigadnik_id,
+      parsed.data.akce_id,
+      supabase
+    ).catch((err) => console.error("Auto-log experience error:", err))
+  }
+
   return { success: true }
+}
+
+async function autoLogInternalExperience(
+  brigadnikId: string,
+  akceId: string,
+  supabase: ReturnType<typeof createAdminClient>
+) {
+  // Check if already logged for this akce
+  const { data: existing } = await supabase
+    .from("pracovni_zkusenosti")
+    .select("id")
+    .eq("brigadnik_id", brigadnikId)
+    .eq("akce_id", akceId)
+    .limit(1)
+
+  if (existing && existing.length > 0) return
+
+  // Get akce details + prirazeni position
+  const { data: akce } = await supabase
+    .from("akce")
+    .select("nazev, datum, misto, klient")
+    .eq("id", akceId)
+    .single()
+
+  const { data: prirazeni } = await supabase
+    .from("prirazeni")
+    .select("pozice")
+    .eq("akce_id", akceId)
+    .eq("brigadnik_id", brigadnikId)
+    .single()
+
+  if (!akce) return
+
+  const pozice = prirazeni?.pozice || akce.nazev
+  const popis = [akce.klient, akce.misto].filter(Boolean).join(", ")
+
+  await supabase.from("pracovni_zkusenosti").insert({
+    brigadnik_id: brigadnikId,
+    pozice,
+    popis: popis || null,
+    typ: "interni",
+    zdroj: "interni",
+    datum_od: akce.datum,
+    datum_do: akce.datum,
+    akce_id: akceId,
+  })
 }
 
 const dochazkaAuthSchema = z.object({

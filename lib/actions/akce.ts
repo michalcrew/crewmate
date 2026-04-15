@@ -107,6 +107,33 @@ export async function addPrirazeni(akceId: string, brigadnikId: string, pozice: 
     return { error: error.message }
   }
 
+  // Get internal user + brigadnik name for audit log
+  const { data: internalUser } = await supabase
+    .from("users")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single()
+
+  const { data: brigadnik } = await supabase
+    .from("brigadnici")
+    .select("jmeno, prijmeni")
+    .eq("id", brigadnikId)
+    .single()
+
+  const { data: akce } = await supabase
+    .from("akce")
+    .select("nazev")
+    .eq("id", akceId)
+    .single()
+
+  await supabase.from("historie").insert({
+    brigadnik_id: brigadnikId,
+    akce_id: akceId,
+    user_id: internalUser?.id,
+    typ: "prirazeni_zmena",
+    popis: `${brigadnik?.prijmeni} ${brigadnik?.jmeno} přiřazen/a na ${akce?.nazev ?? "akci"} (${status})`,
+  })
+
   revalidatePath(`/app/akce/${akceId}`)
   return { success: true }
 }
