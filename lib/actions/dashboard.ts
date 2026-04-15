@@ -38,8 +38,7 @@ export async function getDashboardData() {
     .select("id", { count: "exact", head: true })
     .eq("aktivni", true)
 
-  // Chybějící DPP — brigádníci přiřazení na akce v tomto měsíci bez podepsané DPP
-  const mesic = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`
+  // Chybějící DPP — brigádníci přiřazení na blížící se akce bez podepsané DPP
   const { data: chybejiciDpp } = await supabase
     .from("v_chybejici_dpp")
     .select("id, jmeno, prijmeni, telefon, akce_nazev, akce_datum, dpp_stav")
