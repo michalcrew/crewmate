@@ -1,17 +1,20 @@
 "use client"
 
-import { useTransition } from "react"
+import { useState, useTransition } from "react"
 import Link from "next/link"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core"
+import { useDraggable, useDroppable } from "@dnd-kit/core"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { updatePipelineStav } from "@/lib/actions/pipeline"
 import { PIPELINE_STATES } from "@/lib/constants"
 
@@ -39,67 +42,129 @@ export function PipelineBoard({
   nabidkaId: string
   pipelineByStav: Record<string, PipelineEntry[]>
 }) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-      {Object.entries(PIPELINE_STATES).map(([stav, config]) => (
-        <div key={stav} className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className={`${config.color} text-xs`}>
-              {config.label}
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              {pipelineByStav[stav]?.length ?? 0}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {(pipelineByStav[stav] ?? []).map((entry) => (
-              <PipelineCard
-                key={entry.id}
-                entry={entry}
-                nabidkaId={nabidkaId}
-                currentStav={stav}
-              />
-            ))}
-            {(pipelineByStav[stav]?.length ?? 0) === 0 && (
-              <div className="border border-dashed rounded-lg p-4 text-center text-xs text-muted-foreground">
-                Prázdné
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function PipelineCard({
-  entry,
-  nabidkaId,
-  currentStav,
-}: {
-  entry: PipelineEntry
-  nabidkaId: string
-  currentStav: string
-}) {
+  const [activeEntry, setActiveEntry] = useState<PipelineEntry | null>(null)
   const [isPending, startTransition] = useTransition()
-  const b = entry.brigadnik
 
-  if (!b) return null
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  )
 
-  function handleStavChange(newStav: string | null) {
-    if (!newStav) return
+  function handleDragStart(event: DragStartEvent) {
+    const entry = Object.values(pipelineByStav).flat().find(e => e.id === event.active.id)
+    setActiveEntry(entry ?? null)
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveEntry(null)
+    const { active, over } = event
+    if (!over) return
+
+    const entryId = active.id as string
+    const newStav = over.id as string
+
+    // Find current stav
+    const currentStav = Object.entries(pipelineByStav).find(([, entries]) =>
+      entries.some(e => e.id === entryId)
+    )?.[0]
+
+    if (currentStav === newStav) return
+
     startTransition(async () => {
-      await updatePipelineStav(entry.id, newStav, nabidkaId)
+      await updatePipelineStav(entryId, newStav, nabidkaId)
     })
   }
 
   return (
-    <Card className={isPending ? "opacity-50" : ""}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 ${isPending ? "opacity-60" : ""}`}>
+        {Object.entries(PIPELINE_STATES).map(([stav, config]) => (
+          <DroppableColumn key={stav} stav={stav} config={config} entries={pipelineByStav[stav] ?? []} nabidkaId={nabidkaId} />
+        ))}
+      </div>
+      <DragOverlay>
+        {activeEntry && <PipelineCardContent entry={activeEntry} isDragging />}
+      </DragOverlay>
+    </DndContext>
+  )
+}
+
+function DroppableColumn({
+  stav,
+  config,
+  entries,
+  nabidkaId,
+}: {
+  stav: string
+  config: { label: string; color: string }
+  entries: PipelineEntry[]
+  nabidkaId: string
+}) {
+  const { isOver, setNodeRef } = useDroppable({ id: stav })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`space-y-2 min-h-[100px] rounded-lg p-2 transition-colors ${isOver ? "bg-primary/5 ring-2 ring-primary/20" : ""}`}
+    >
+      <div className="flex items-center gap-2">
+        <Badge variant="outline" className={`${config.color} text-xs`}>
+          {config.label}
+        </Badge>
+        <span className="text-xs text-muted-foreground">{entries.length}</span>
+      </div>
+      <div className="space-y-2">
+        {entries.map((entry) => (
+          <DraggableCard key={entry.id} entry={entry} />
+        ))}
+        {entries.length === 0 && (
+          <div className="border border-dashed rounded-lg p-4 text-center text-xs text-muted-foreground">
+            Přetáhněte sem
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DraggableCard({ entry }: { entry: PipelineEntry }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: entry.id,
+  })
+
+  const style = transform ? {
+    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+  } : undefined
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`cursor-grab active:cursor-grabbing ${isDragging ? "opacity-30" : ""}`}
+    >
+      <PipelineCardContent entry={entry} />
+    </div>
+  )
+}
+
+function PipelineCardContent({ entry, isDragging }: { entry: PipelineEntry; isDragging?: boolean }) {
+  const b = entry.brigadnik
+  if (!b) return null
+
+  return (
+    <Card className={`${isDragging ? "shadow-lg ring-2 ring-primary" : ""}`}>
       <CardContent className="p-3 space-y-2">
         <div>
           <Link
             href={`/app/brigadnici/${b.id}`}
             className="font-medium text-sm hover:underline"
+            onClick={(e) => isDragging && e.preventDefault()}
           >
             {b.prijmeni} {b.jmeno}
           </Link>
@@ -121,18 +186,6 @@ function PipelineCard({
             </Badge>
           )}
         </div>
-        <Select value={currentStav} onValueChange={handleStavChange}>
-          <SelectTrigger className="h-7 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(PIPELINE_STATES).map(([s, c]) => (
-              <SelectItem key={s} value={s} className="text-xs">
-                {c.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </CardContent>
     </Card>
   )
