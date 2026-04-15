@@ -30,8 +30,8 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r border-border bg-sidebar">
       <div className="flex h-14 items-center px-4 border-b border-border">
-        <Link href="/app" className="text-lg font-bold text-sidebar-primary">
-          Crewmate
+        <Link href="/app" className="block">
+          <img src="/images/logo/crewmate-logotyp.svg" alt="Crewmate" className="h-6 brightness-0 invert" />
         </Link>
       </div>
       <nav className="flex-1 px-2 py-4 space-y-1">
