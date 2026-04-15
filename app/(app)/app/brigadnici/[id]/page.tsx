@@ -22,6 +22,7 @@ import {
 } from "@/lib/actions/brigadnici"
 import { PIPELINE_STATES, DPP_STATES } from "@/lib/constants"
 import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button"
+import { GenerateDppButton, SendDppButton, UploadPodpisForm } from "@/components/brigadnici/dpp-actions"
 
 export const metadata: Metadata = {
   title: "Detail brigádníka",
@@ -173,12 +174,26 @@ export default async function BrigadnikDetailPage({
           </Card>
         </TabsContent>
 
-        <TabsContent value="smluvni" className="mt-4">
+        <TabsContent value="smluvni" className="mt-4 space-y-4">
+          {brigadnik.dotaznik_vyplnen && (
+            <Card>
+              <CardHeader><CardTitle>Akce pro aktuální měsíc</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <GenerateDppButton brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} />
+                  <SendDppButton brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} />
+                </div>
+                <UploadPodpisForm brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} typ="dpp_podpis" label="Podepsaná DPP" />
+                <UploadPodpisForm brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} typ="prohlaseni_podpis" label="Podepsané prohlášení" />
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader><CardTitle>Smluvní stav per měsíc</CardTitle></CardHeader>
             <CardContent>
               {smluvniStav.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Žádné záznamy.</p>
+                <p className="text-sm text-muted-foreground">Žádné záznamy. Vygenerujte DPP výše.</p>
               ) : (
                 <Table>
                   <TableHeader>
