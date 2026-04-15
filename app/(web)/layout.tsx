@@ -21,7 +21,10 @@ export default function WebLayout({
             <Link href="/#jak-to-funguje" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
               Jak to funguje
             </Link>
-            <Link href="/prace" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
+            <Link href="/#zkusenosti" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
+              Zkušenosti
+            </Link>
+            <Link href="/#brigady" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
               Brigády
             </Link>
             <Link href="/#kontakt" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
