@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { FileText, Mail, Upload } from "lucide-react"
-import { generateDpp, sendDppEmail, uploadPodpis } from "@/lib/actions/dokumenty"
+import { generateDpp, generateProhlaseni, sendDppEmail, uploadPodpis } from "@/lib/actions/dokumenty"
 import { toast } from "sonner"
 
 export function GenerateDppButton({ brigadnikId, mesic }: { brigadnikId: string; mesic: string }) {
@@ -26,6 +26,28 @@ export function GenerateDppButton({ brigadnikId, mesic }: { brigadnikId: string;
     >
       <FileText className="h-4 w-4 mr-1" />
       {isPending ? "Generuji..." : "Vygenerovat DPP"}
+    </Button>
+  )
+}
+
+export function GenerateProhlaseniButton({ brigadnikId, mesic }: { brigadnikId: string; mesic: string }) {
+  const [isPending, startTransition] = useTransition()
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={isPending}
+      onClick={() => {
+        startTransition(async () => {
+          const result = await generateProhlaseni(brigadnikId, mesic)
+          if (result.error) toast.error(result.error)
+          else toast.success("Prohlášení vygenerováno!")
+        })
+      }}
+    >
+      <FileText className="h-4 w-4 mr-1" />
+      {isPending ? "Generuji..." : "Vygenerovat prohlášení"}
     </Button>
   )
 }

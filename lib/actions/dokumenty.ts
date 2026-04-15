@@ -48,10 +48,22 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     zdravotni_pojistovna: escapeHtml(brigadnik.zdravotni_pojistovna ?? ""),
     cislo_uctu: escapeHtml(brigadnik.cislo_uctu ?? ""),
     kod_banky: escapeHtml(brigadnik.kod_banky ?? ""),
+    uplatnuje_slevu_text: brigadnik.uplatnuje_slevu_jinde ? "SOUČASNĚ" : "NESOUČASNĚ",
   }
 
-  // Generate DPP content as HTML (placeholder — real DOCX template will be added later)
-  const dppHtml = `
+  // Load DPP template from DB
+  const { data: sablona } = await adminClient
+    .from("dokument_sablony")
+    .select("obsah_html")
+    .eq("typ", "dpp")
+    .eq("aktivni", true)
+    .lte("platnost_od", `${mesic}-01`)
+    .order("platnost_od", { ascending: false })
+    .limit(1)
+    .single()
+
+  // Generate DPP from template (or fallback)
+  const dppTemplate = sablona?.obsah_html ?? `
     <html><body style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px;">
     <h1 style="text-align: center;">Dohoda o provedení práce</h1>
     <p style="text-align: center;">na měsíc: <strong>${mesicLabel}</strong></p>
@@ -79,8 +91,21 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     </body></html>
   `
 
+  // Replace template variables with escaped user data
+  const dppHtml = dppTemplate
+    .replaceAll("{{jmeno}}", safe.jmeno)
+    .replaceAll("{{prijmeni}}", safe.prijmeni)
+    .replaceAll("{{rodne_cislo}}", safe.rodne_cislo)
+    .replaceAll("{{datum_narozeni}}", safe.datum_narozeni)
+    .replaceAll("{{adresa}}", safe.adresa)
+    .replaceAll("{{cislo_op}}", safe.cislo_op)
+    .replaceAll("{{zdravotni_pojistovna}}", safe.zdravotni_pojistovna)
+    .replaceAll("{{cislo_uctu}}", safe.cislo_uctu)
+    .replaceAll("{{kod_banky}}", safe.kod_banky)
+    .replaceAll("{{mesic}}", escapeHtml(mesicLabel))
+    .replaceAll("{{uplatnuje_slevu_text}}", safe.uplatnuje_slevu_text)
+
   // Store as document in Supabase Storage
-  const adminClient = createAdminClient()
   const fileName = `DPP_${brigadnik.prijmeni}_${brigadnik.jmeno}_${mesic}.html`
   const storagePath = `dokumenty/${brigadnikId}/dpp/${fileName}`
 
@@ -126,6 +151,62 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     user_id: internalUser?.id,
     typ: "dpp_vygenerovano",
     popis: `DPP vygenerováno pro ${mesicLabel}`,
+  })
+
+  revalidatePath(`/app/brigadnici/${brigadnikId}`)
+  return { success: true }
+}
+
+export async function generateProhlaseni(brigadnikId: string, mesic: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const { data: brigadnik } = await supabase
+    .from("brigadnici").select("*").eq("id", brigadnikId).single()
+  if (!brigadnik) return { error: "Brigádník nenalezen" }
+  if (!brigadnik.dotaznik_vyplnen) return { error: "Brigádník nemá vyplněný dotazník" }
+
+  let rodne_cislo = ""
+  try { if (brigadnik.rodne_cislo) rodne_cislo = decrypt(brigadnik.rodne_cislo) } catch { rodne_cislo = brigadnik.rodne_cislo ?? "" }
+
+  const mesicLabel = new Date(`${mesic}-01`).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })
+  const adminClient = createAdminClient()
+
+  const safe = {
+    jmeno: escapeHtml(brigadnik.jmeno), prijmeni: escapeHtml(brigadnik.prijmeni),
+    rodne_cislo: escapeHtml(rodne_cislo), adresa: escapeHtml(brigadnik.adresa ?? ""),
+    uplatnuje_slevu_text: brigadnik.uplatnuje_slevu_jinde ? "SOUČASNĚ" : "NESOUČASNĚ",
+  }
+
+  const { data: sablona } = await adminClient
+    .from("dokument_sablony").select("obsah_html").eq("typ", "prohlaseni").eq("aktivni", true)
+    .lte("platnost_od", `${mesic}-01`).order("platnost_od", { ascending: false }).limit(1).single()
+
+  const html = (sablona?.obsah_html ?? "<p>Prohlášení — šablona nenalezena</p>")
+    .replaceAll("{{jmeno}}", safe.jmeno).replaceAll("{{prijmeni}}", safe.prijmeni)
+    .replaceAll("{{rodne_cislo}}", safe.rodne_cislo).replaceAll("{{adresa}}", safe.adresa)
+    .replaceAll("{{mesic}}", escapeHtml(mesicLabel))
+    .replaceAll("{{uplatnuje_slevu_text}}", safe.uplatnuje_slevu_text)
+
+  const fileName = `Prohlaseni_${brigadnik.prijmeni}_${brigadnik.jmeno}_${mesic}.html`
+  const storagePath = `dokumenty/${brigadnikId}/prohlaseni/${fileName}`
+
+  await adminClient.storage.from("crewmate-storage").upload(storagePath, new Blob([html], { type: "text/html" }), { upsert: true })
+
+  const { data: dokument } = await adminClient.from("dokumenty").insert({
+    brigadnik_id: brigadnikId, typ: "prohlaseni", nazev: fileName,
+    storage_path: storagePath, mesic: `${mesic}-01`, mime_type: "text/html",
+  }).select("id").single()
+
+  const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, mesic)
+  const { updateProhlaseniStav } = await import("./smluvni-stav")
+  await updateProhlaseniStav(smluvniStav.id, brigadnikId, "vygenerovano", dokument?.id)
+
+  const { data: internalUser } = await adminClient.from("users").select("id").eq("auth_user_id", user.id).single()
+  await adminClient.from("historie").insert({
+    brigadnik_id: brigadnikId, user_id: internalUser?.id,
+    typ: "dpp_vygenerovano", popis: `Prohlášení vygenerováno pro ${mesicLabel}`,
   })
 
   revalidatePath(`/app/brigadnici/${brigadnikId}`)

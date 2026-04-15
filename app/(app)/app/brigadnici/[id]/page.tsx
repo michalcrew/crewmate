@@ -22,7 +22,7 @@ import {
 } from "@/lib/actions/brigadnici"
 import { PIPELINE_STATES, DPP_STATES } from "@/lib/constants"
 import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button"
-import { GenerateDppButton, SendDppButton, UploadPodpisForm } from "@/components/brigadnici/dpp-actions"
+import { GenerateDppButton, GenerateProhlaseniButton, SendDppButton, UploadPodpisForm } from "@/components/brigadnici/dpp-actions"
 import { EditBrigadnikDialog } from "@/components/brigadnici/edit-brigadnik-dialog"
 
 export const metadata: Metadata = {
@@ -183,6 +183,7 @@ export default async function BrigadnikDetailPage({
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap gap-2">
                   <GenerateDppButton brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} />
+                  <GenerateProhlaseniButton brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} />
                   <SendDppButton brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} />
                 </div>
                 <UploadPodpisForm brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} typ="dpp_podpis" label="Podepsaná DPP" />
