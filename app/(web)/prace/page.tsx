@@ -1,12 +1,10 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { MapPin, Clock, Banknote } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { MapPin, Banknote, ArrowRight } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 
 export const metadata: Metadata = {
-  title: "Volné pozice — Crewmate",
+  title: "Brigády — Crewmate",
   description: "Hledáme brigádníky na eventové akce. Bary, vstupy, šatny, hostesky, bezpečnost, úklid, produkce.",
 }
 
@@ -18,7 +16,6 @@ async function getPublicNabidky() {
     .eq("zverejnena", true)
     .eq("stav", "aktivni")
     .order("created_at", { ascending: false })
-
   return data ?? []
 }
 
@@ -26,22 +23,23 @@ export default async function PracePage() {
   const nabidky = await getPublicNabidky()
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
-      <div className="text-center mb-12">
-        <h1 className="text-3xl md:text-4xl font-bold mb-4">Volné pozice</h1>
-        <p className="text-muted-foreground text-lg">
-          Přidejte se k našemu týmu. Flexibilní brigády na eventových akcích.
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
+      <div className="mb-12">
+        <p className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest mb-3">Brigády</p>
+        <h1 className="text-3xl md:text-5xl font-black mb-4">Volné pozice</h1>
+        <p className="text-gray-600 text-lg max-w-lg">
+          Přidejte se k našemu týmu. Flexibilní brigády na eventových akcích po celé ČR.
         </p>
       </div>
 
       {nabidky.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="text-muted-foreground text-lg mb-2">
+        <div className="text-center py-20 bg-gray-50 rounded-2xl">
+          <p className="text-gray-500 text-lg mb-2">
             Momentálně nemáme žádné otevřené pozice.
           </p>
-          <p className="text-muted-foreground">
+          <p className="text-gray-400">
             Zkuste to později nebo nám napište na{" "}
-            <a href="mailto:team@crewmate.cz" className="text-primary hover:underline">
+            <a href="mailto:team@crewmate.cz" className="text-[#1a1a4e] hover:underline font-medium">
               team@crewmate.cz
             </a>
           </p>
@@ -49,46 +47,40 @@ export default async function PracePage() {
       ) : (
         <div className="space-y-4">
           {nabidky.map((n) => (
-            <Link key={n.id} href={`/prace/${n.slug}`}>
-              <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-xl">{n.nazev}</CardTitle>
-                      {n.klient && (
-                        <p className="text-sm text-muted-foreground mt-1">{n.klient}</p>
-                      )}
-                    </div>
-                    <Badge variant="outline">
-                      {n.typ === "prubezna" ? "Průběžně" : "Jednorázová"}
-                    </Badge>
+            <Link key={n.id} href={`/prace/${n.slug}`} className="group block">
+              <div className="border border-gray-200 rounded-xl p-6 hover:border-[#1a1a4e]/30 hover:shadow-lg transition-all">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h2 className="text-xl font-bold group-hover:text-[#1a1a4e] transition-colors">{n.nazev}</h2>
+                    {n.klient && (
+                      <p className="text-sm text-gray-500 mt-0.5">{n.klient}</p>
+                    )}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {n.popis_prace && (
-                    <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                      {n.popis_prace}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                  <span className="text-xs font-medium text-[#1a1a4e] bg-[#1a1a4e]/5 px-3 py-1 rounded-full shrink-0">
+                    {n.typ === "prubezna" ? "Průběžně" : "Jednorázová"}
+                  </span>
+                </div>
+                {n.popis_prace && (
+                  <p className="text-sm text-gray-600 mb-4 line-clamp-2">{n.popis_prace}</p>
+                )}
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap gap-4 text-sm text-gray-500">
                     {n.misto && (
                       <span className="flex items-center gap-1">
                         <MapPin className="h-3.5 w-3.5" /> {n.misto}
                       </span>
                     )}
                     {n.odmena && (
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 font-semibold text-gray-700">
                         <Banknote className="h-3.5 w-3.5" /> {n.odmena}
                       </span>
                     )}
-                    {n.typ === "prubezna" && (
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5" /> Průběžný nábor
-                      </span>
-                    )}
                   </div>
-                </CardContent>
-              </Card>
+                  <span className="text-sm text-[#1a1a4e] font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    Detail <ArrowRight className="h-3.5 w-3.5" />
+                  </span>
+                </div>
+              </div>
             </Link>
           ))}
         </div>
