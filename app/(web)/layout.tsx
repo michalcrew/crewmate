@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { MobileMenu } from "@/components/web/mobile-menu"
 
 export default function WebLayout({
   children,
@@ -40,6 +41,7 @@ export default function WebLayout({
                 Poptávka
               </Button>
             </Link>
+          <MobileMenu />
           </div>
         </div>
       </header>
@@ -85,8 +87,9 @@ export default function WebLayout({
               </div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-6 mb-2">Právní</p>
               <div className="text-sm text-gray-300 space-y-1">
-                <p><a href="#" className="hover:text-white transition-colors">Ochrana osobních údajů (GDPR)</a></p>
-                <p><a href="#" className="hover:text-white transition-colors">Obchodní podmínky</a></p>
+                <p><a href="https://drive.google.com/file/d/1go0Gokh2MykOQM1u2TrMCB2-X7rF6S1i/view" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Ochrana osobních údajů (GDPR)</a></p>
+                <p><a href="https://drive.google.com/file/d/1r9-OOyBfjoV3o0zpj_9Jmtlj1lWk0jpi/view" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Obchodní podmínky</a></p>
+                <p><a href="https://drive.google.com/file/d/1eg8yJRAL6jUpdHtb5LlxejX7zJKZl1S1/view" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Nastavení cookies</a></p>
               </div>
             </div>
           </div>
