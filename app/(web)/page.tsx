@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { KontaktForm } from "@/components/web/kontakt-form"
 import {
@@ -113,10 +114,13 @@ export default function HomePage() {
             </div>
             <div className="relative hidden lg:block">
               <div className="aspect-[4/5] rounded-2xl overflow-hidden relative">
-                <img
+                <Image
                   src="/images/events/event-1.jpg"
                   alt="Crewmate eventový personál"
-                  className="absolute inset-0 w-full h-full object-cover"
+                  fill
+                  className="object-cover"
+                  priority
+                  sizes="(max-width: 1024px) 0vw, 50vw"
                 />
                 <div className="absolute bottom-0 left-0 right-0 bg-[#000044]/90 backdrop-blur-sm p-4">
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Obsazujeme role</p>
