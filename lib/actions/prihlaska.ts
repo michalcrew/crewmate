@@ -91,7 +91,8 @@ export async function submitPrihlaska(formData: FormData) {
     if (!isAllowedCvType(cvFile.type)) return { error: "Nepodporovaný formát CV. Povolené: PDF, DOC, DOCX." }
 
     const ext = cvFile.name.split(".").pop() ?? "pdf"
-    const cvPath = `prihlasky/${brigadnikId}/cv/CV_${parsed.data.prijmeni}_${parsed.data.jmeno}.${ext}`
+    const uniqueId = crypto.randomUUID().slice(0, 8)
+    const cvPath = `prihlasky/${brigadnikId}/cv/${uniqueId}_CV.${ext}`
     const buffer = Buffer.from(await cvFile.arrayBuffer())
 
     const { error: cvUploadError } = await supabase.storage
@@ -108,7 +109,8 @@ export async function submitPrihlaska(formData: FormData) {
     if (!isAllowedPhotoType(photoFile.type)) return { error: "Nepodporovaný formát foto. Povolené: JPG, PNG, HEIC." }
 
     const ext = photoFile.name.split(".").pop() ?? "jpg"
-    const photoPath = `prihlasky/${brigadnikId}/foto/foto_${parsed.data.prijmeni}_${parsed.data.jmeno}.${ext}`
+    const uniqueId = crypto.randomUUID().slice(0, 8)
+    const photoPath = `prihlasky/${brigadnikId}/foto/${uniqueId}_foto.${ext}`
     const buffer = Buffer.from(await photoFile.arrayBuffer())
 
     const { error: photoUploadError } = await supabase.storage
@@ -153,5 +155,47 @@ export async function submitPrihlaska(formData: FormData) {
     popis: `Přihláška z webu: ${parsed.data.jmeno} ${parsed.data.prijmeni}${cvUrl ? " (+ CV)" : ""}${fotoUrl ? " (+ foto)" : ""}`,
   })
 
+  // AI extraction of work experience from CV (async, don't block response)
+  if (cvUrl && cvFile && cvFile.type === "application/pdf") {
+    extractCvWorkExperience(brigadnikId, Buffer.from(await cvFile.arrayBuffer()), supabase).catch(
+      (err) => console.error("CV extraction background error:", err)
+    )
+  }
+
   return { success: true }
+}
+
+async function extractCvWorkExperience(
+  brigadnikId: string,
+  pdfBuffer: Buffer,
+  supabase: ReturnType<typeof createAdminClient>
+) {
+  const { extractTextFromPdf, extractWorkExperienceFromText } = await import("@/lib/ai/extract-cv")
+
+  const text = await extractTextFromPdf(pdfBuffer)
+  if (!text || text.length < 50) return
+
+  const experiences = await extractWorkExperienceFromText(text)
+  if (experiences.length === 0) return
+
+  // Insert extracted experiences
+  const rows = experiences.map((exp) => ({
+    brigadnik_id: brigadnikId,
+    pozice: exp.pozice,
+    popis: exp.popis || null,
+    typ: "externi" as const,
+    zdroj: "cv_ai" as const,
+    datum_od: exp.datum_od || null,
+    datum_do: exp.datum_do || null,
+  }))
+
+  await supabase.from("pracovni_zkusenosti").insert(rows)
+
+  // Audit log
+  await supabase.from("historie").insert({
+    brigadnik_id: brigadnikId,
+    typ: "cv_extraction",
+    popis: `AI vytěžení CV: ${experiences.length} zkušenost${experiences.length === 1 ? "" : experiences.length < 5 ? "i" : "í"}`,
+    metadata: { count: experiences.length, positions: experiences.map(e => e.pozice) },
+  })
 }
