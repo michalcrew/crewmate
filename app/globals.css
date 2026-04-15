@@ -136,3 +136,19 @@
     @apply font-sans;
   }
 }
+
+/* Brand navy blue tint overlay for event photos */
+.blue-tint {
+  position: relative;
+}
+.blue-tint::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #000066;
+  mix-blend-mode: multiply;
+  opacity: 0.3;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 1;
+}

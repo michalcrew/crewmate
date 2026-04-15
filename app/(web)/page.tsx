@@ -233,10 +233,10 @@ export default function HomePage() {
 
           {/* Photo strip */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-8 rounded-xl overflow-hidden">
-            <div className="aspect-[4/3] relative"><Image src="/images/events/signal-1.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
-            <div className="aspect-[4/3] relative"><Image src="/images/events/signal-2.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
-            <div className="aspect-[4/3] relative"><Image src="/images/events/signal-3.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
-            <div className="aspect-[4/3] relative"><Image src="/images/events/signal-4.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
+            <div className="aspect-[4/3] relative blue-tint"><Image src="/images/events/signal-1.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
+            <div className="aspect-[4/3] relative blue-tint"><Image src="/images/events/signal-2.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
+            <div className="aspect-[4/3] relative blue-tint"><Image src="/images/events/signal-3.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
+            <div className="aspect-[4/3] relative blue-tint"><Image src="/images/events/signal-4.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
           </div>
 
           {/* SIGNAL case study — navy bg */}
