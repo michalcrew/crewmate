@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { submitPrihlaska } from "@/lib/actions/prihlaska"
-import { CheckCircle } from "lucide-react"
+import { CheckCircle, Upload } from "lucide-react"
 
 export function PrihlaskaForm({ nabidkaId }: { nabidkaId: string }) {
   const [state, formAction, pending] = useActionState(
@@ -55,6 +55,35 @@ export function PrihlaskaForm({ nabidkaId }: { nabidkaId: string }) {
               <Label htmlFor="telefon">Telefon *</Label>
               <Input id="telefon" name="telefon" required />
             </div>
+          </div>
+
+          {/* File uploads */}
+          <div className="space-y-2">
+            <Label htmlFor="cv" className="flex items-center gap-1.5">
+              <Upload className="h-3.5 w-3.5" /> Životopis (CV)
+            </Label>
+            <Input
+              id="cv"
+              name="cv"
+              type="file"
+              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:font-medium hover:file:bg-gray-200 cursor-pointer"
+            />
+            <p className="text-xs text-muted-foreground">PDF nebo DOC/DOCX, max 20 MB</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="foto" className="flex items-center gap-1.5">
+              <Upload className="h-3.5 w-3.5" /> Fotka
+            </Label>
+            <Input
+              id="foto"
+              name="foto"
+              type="file"
+              accept=".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif"
+              className="file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:font-medium hover:file:bg-gray-200 cursor-pointer"
+            />
+            <p className="text-xs text-muted-foreground">JPG, PNG nebo HEIC, max 20 MB</p>
           </div>
 
           <div className="flex items-start gap-2 pt-2">
