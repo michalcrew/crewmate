@@ -22,13 +22,13 @@ export default async function NastaveniPage() {
     getDokumentSablony(),
   ])
 
-  // Activity log (posledních 50 záznamů)
+  // Activity log (posledních 100 záznamů)
   const supabase = await createClient()
   const { data: activityLog } = await supabase
     .from("historie")
     .select("*, user:users!historie_user_id_fkey(jmeno, prijmeni)")
     .order("created_at", { ascending: false })
-    .limit(50)
+    .limit(100)
 
   const isAdmin = currentRole === "admin"
 
@@ -137,7 +137,7 @@ export default async function NastaveniPage() {
           <TabsContent value="log" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Activity Log (posledních 50 záznamů)</CardTitle>
+                <CardTitle>Activity Log (posledních 100 záznamů)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
