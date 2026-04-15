@@ -1,4 +1,14 @@
 import type { Metadata } from "next"
+import { notFound } from "next/navigation"
+import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { getNabidkaById } from "@/lib/actions/nabidky"
+import { getPipelineByNabidka } from "@/lib/actions/pipeline"
+import { PipelineBoard } from "@/components/pipeline/pipeline-board"
+import { PIPELINE_STATES } from "@/lib/constants"
 
 export const metadata: Metadata = {
   title: "Detail nabídky",
@@ -10,12 +20,77 @@ export default async function NabidkaDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  const nabidka = await getNabidkaById(id)
+  if (!nabidka) notFound()
+
+  const pipeline = await getPipelineByNabidka(id)
+
+  const pipelineByStav = Object.keys(PIPELINE_STATES).reduce(
+    (acc, stav) => {
+      acc[stav] = pipeline.filter((e) => e.stav === stav)
+      return acc
+    },
+    {} as Record<string, typeof pipeline>
+  )
+
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-4">Detail nabídky</h1>
-      <p className="text-muted-foreground">
-        Nabídka {id}. Pipeline kanban bude implementován v E-0002 (F-0011).
-      </p>
+      <div className="flex items-center gap-3 mb-6">
+        <Link href="/app/nabidky">
+          <Button variant="ghost" size="icon">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </Link>
+        <div>
+          <h1 className="text-2xl font-semibold">{nabidka.nazev}</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <Badge variant="outline" className="text-xs">
+              {nabidka.typ === "prubezna" ? "Průběžná" : "Jednorázová"}
+            </Badge>
+            {nabidka.klient && (
+              <span className="text-sm text-muted-foreground">{nabidka.klient}</span>
+            )}
+            {nabidka.misto && (
+              <span className="text-sm text-muted-foreground">| {nabidka.misto}</span>
+            )}
+            {nabidka.odmena && (
+              <span className="text-sm text-muted-foreground">| {nabidka.odmena}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <h2 className="text-lg font-medium mb-3">
+          Pipeline ({pipeline.length} brigádník{pipeline.length === 1 ? "" : pipeline.length < 5 ? "i" : "ů"})
+        </h2>
+        <PipelineBoard
+          nabidkaId={id}
+          pipelineByStav={pipelineByStav}
+        />
+      </div>
+
+      {(nabidka.popis_prace || nabidka.pozadavky) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Detail</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {nabidka.popis_prace && (
+              <div>
+                <span className="text-muted-foreground">Popis práce:</span>
+                <p className="mt-1">{nabidka.popis_prace}</p>
+              </div>
+            )}
+            {nabidka.pozadavky && (
+              <div>
+                <span className="text-muted-foreground">Požadavky:</span>
+                <p className="mt-1">{nabidka.pozadavky}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

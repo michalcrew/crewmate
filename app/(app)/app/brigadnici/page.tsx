@@ -1,15 +1,106 @@
 import type { Metadata } from "next"
+import Link from "next/link"
+import { Plus } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { getBrigadnici } from "@/lib/actions/brigadnici"
+import { BrigadniciSearch } from "@/components/brigadnici/brigadnici-search"
+import { DPP_STATES } from "@/lib/constants"
 
 export const metadata: Metadata = {
   title: "Brigádníci",
 }
 
-export default function BrigadniciPage() {
+export default async function BrigadniciPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
+  const params = await searchParams
+  const brigadnici = await getBrigadnici({ search: params.q })
+
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-4">Brigádníci</h1>
-      <p className="text-muted-foreground">
-        Seznam brigádníků. Bude implementováno v E-0002 (F-0012).
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold">Brigádníci</h1>
+        <Link href="/app/brigadnici/novy">
+          <Button>
+            <Plus className="h-4 w-4 mr-2" />
+            Přidat brigádníka
+          </Button>
+        </Link>
+      </div>
+
+      <BrigadniciSearch />
+
+      <div className="border rounded-lg">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Jméno</TableHead>
+              <TableHead>Telefon</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Údaje</TableHead>
+              <TableHead>DPP</TableHead>
+              <TableHead>Hodnocení</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {brigadnici.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  {params.q
+                    ? `Žádní brigádníci pro "${params.q}"`
+                    : "Žádní brigádníci. Přidejte prvního brigádníka."}
+                </TableCell>
+              </TableRow>
+            ) : (
+              brigadnici.map((b) => {
+                const dppState = DPP_STATES[(b.dpp_stav ?? "zadny") as keyof typeof DPP_STATES]
+                return (
+                  <TableRow key={b.id}>
+                    <TableCell>
+                      <Link
+                        href={`/app/brigadnici/${b.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {b.prijmeni} {b.jmeno}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{b.telefon}</TableCell>
+                    <TableCell className="text-muted-foreground">{b.email}</TableCell>
+                    <TableCell>
+                      {b.dotaznik_vyplnen
+                        ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-xs">Vyplněno</Badge>
+                        : <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-xs">Chybí</Badge>
+                      }
+                    </TableCell>
+                    <TableCell>
+                      <span className={dppState?.color ?? ""}>
+                        {dppState?.label ?? "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {Number(b.prumerne_hodnoceni) > 0 ? `${b.prumerne_hodnoceni} / 5` : "—"}
+                    </TableCell>
+                  </TableRow>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <p className="text-sm text-muted-foreground mt-2">
+        {brigadnici.length} brigádník{brigadnici.length === 1 ? "" : brigadnici.length < 5 ? "i" : "ů"}
       </p>
     </div>
   )
