@@ -18,6 +18,8 @@ const nabidkaSchema = z.object({
   pocet_lidi: z.coerce.number().int().positive().optional(),
   slug: z.string().optional(),
   zverejnena: z.boolean().optional(),
+  koho_hledame: z.string().optional(),
+  co_nabizime: z.string().optional(),
 })
 
 export async function getNabidky(filter?: { filtr?: string }) {
@@ -28,9 +30,9 @@ export async function getNabidky(filter?: { filtr?: string }) {
     .order("created_at", { ascending: false })
 
   if (filter?.filtr === "aktivni") {
-    query = query.eq("typ", "aktivni").neq("stav", "ukoncena")
+    query = query.eq("typ", "jednorazova").neq("stav", "ukoncena")
   } else if (filter?.filtr === "stala") {
-    query = query.eq("typ", "stala").neq("stav", "ukoncena")
+    query = query.eq("typ", "prubezna").neq("stav", "ukoncena")
   } else if (filter?.filtr === "ukoncena") {
     query = query.eq("stav", "ukoncena")
   }
@@ -89,6 +91,8 @@ export async function createNabidka(formData: FormData) {
     slug,
     datum_od: parsed.data.datum_od || null,
     datum_do: parsed.data.datum_do || null,
+    koho_hledame: parsed.data.koho_hledame || null,
+    co_nabizime: parsed.data.co_nabizime || null,
     naborar_id: internalUser?.id ?? null,
   })
 
@@ -123,6 +127,8 @@ export async function updateNabidka(id: string, formData: FormData) {
       ...parsed.data,
       datum_od: parsed.data.datum_od || null,
       datum_do: parsed.data.datum_do || null,
+      koho_hledame: parsed.data.koho_hledame || null,
+      co_nabizime: parsed.data.co_nabizime || null,
     })
     .eq("id", id)
 

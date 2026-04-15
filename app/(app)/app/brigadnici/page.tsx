@@ -48,15 +48,17 @@ export default async function BrigadniciPage({
               <TableHead>Jméno</TableHead>
               <TableHead>Telefon</TableHead>
               <TableHead>Email</TableHead>
+              <TableHead>Akce</TableHead>
               <TableHead>Údaje</TableHead>
-              <TableHead>DPP</TableHead>
+              <TableHead>DPP tento měsíc</TableHead>
+              <TableHead>DPP příští měsíc</TableHead>
               <TableHead>Hodnocení</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {brigadnici.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                   {params.q
                     ? `Žádní brigádníci pro "${params.q}"`
                     : "Žádní brigádníci. Přidejte prvního brigádníka."}
@@ -64,7 +66,8 @@ export default async function BrigadniciPage({
               </TableRow>
             ) : (
               brigadnici.map((b) => {
-                const dppState = DPP_STATES[(b.dpp_stav ?? "zadny") as keyof typeof DPP_STATES]
+                const dppCurrentState = DPP_STATES[((b as { dpp_tento_mesic?: string }).dpp_tento_mesic ?? "zadny") as keyof typeof DPP_STATES]
+                const dppNextState = DPP_STATES[((b as { dpp_pristi_mesic?: string }).dpp_pristi_mesic ?? "zadny") as keyof typeof DPP_STATES]
                 return (
                   <TableRow key={b.id}>
                     <TableCell>
@@ -77,6 +80,9 @@ export default async function BrigadniciPage({
                     </TableCell>
                     <TableCell className="text-muted-foreground">{b.telefon}</TableCell>
                     <TableCell className="text-muted-foreground">{b.email}</TableCell>
+                    <TableCell className="text-center">
+                      {(b as { pocet_akci?: number }).pocet_akci ?? 0}
+                    </TableCell>
                     <TableCell>
                       {b.dotaznik_vyplnen
                         ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-xs">Vyplněno</Badge>
@@ -84,8 +90,13 @@ export default async function BrigadniciPage({
                       }
                     </TableCell>
                     <TableCell>
-                      <span className={dppState?.color ?? ""}>
-                        {dppState?.label ?? "—"}
+                      <span className={dppCurrentState?.color ?? ""}>
+                        {dppCurrentState?.label ?? "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className={dppNextState?.color ?? ""}>
+                        {dppNextState?.label ?? "—"}
                       </span>
                     </TableCell>
                     <TableCell>

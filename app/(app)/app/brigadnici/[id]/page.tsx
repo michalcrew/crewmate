@@ -56,7 +56,7 @@ export default async function BrigadnikDetailPage({
         </Link>
         {brigadnik.foto_url && (
           <div className="h-12 w-12 rounded-full overflow-hidden bg-muted shrink-0">
-            <img src={brigadnik.foto_url} alt="" className="h-full w-full object-cover" />
+            <img src={brigadnik.foto_url} alt={`${brigadnik.jmeno} ${brigadnik.prijmeni}`} className="h-full w-full object-cover" />
           </div>
         )}
         <div>

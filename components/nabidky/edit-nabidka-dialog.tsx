@@ -28,6 +28,8 @@ type Props = {
     pocet_lidi: number | null
     zverejnena: boolean
     stav: string
+    koho_hledame?: string | null
+    co_nabizime?: string | null
   }
 }
 
@@ -100,9 +102,31 @@ export function EditNabidkaDialog({ nabidka }: Props) {
               <Input name="pocet_lidi" type="number" min="1" defaultValue={nabidka.pocet_lidi ?? ""} />
             </div>
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Datum od</Label>
+              <Input name="datum_od" type="date" defaultValue={nabidka.datum_od ?? ""} />
+            </div>
+            <div className="space-y-2">
+              <Label>Datum do</Label>
+              <Input name="datum_do" type="date" defaultValue={nabidka.datum_do ?? ""} />
+            </div>
+          </div>
           <div className="space-y-2">
             <Label>Popis práce</Label>
             <Textarea name="popis_prace" defaultValue={nabidka.popis_prace ?? ""} rows={3} />
+          </div>
+          <div className="space-y-2">
+            <Label>Koho hledáme</Label>
+            <Textarea name="koho_hledame" defaultValue={nabidka.koho_hledame ?? ""} rows={2} placeholder="Popis hledaných pozic, ideální kandidát..." />
+          </div>
+          <div className="space-y-2">
+            <Label>Požadavky</Label>
+            <Textarea name="pozadavky" defaultValue={nabidka.pozadavky ?? ""} rows={2} placeholder="Zkušenosti, věk, jazyk..." />
+          </div>
+          <div className="space-y-2">
+            <Label>Co nabízíme</Label>
+            <Textarea name="co_nabizime" defaultValue={nabidka.co_nabizime ?? ""} rows={2} placeholder="Odměna, benefity, zázemí..." />
           </div>
           <div className="flex items-center gap-2">
             <input type="checkbox" id="en-zverejnena" name="zverejnena" defaultChecked={nabidka.zverejnena} className="h-4 w-4" />
