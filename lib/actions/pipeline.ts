@@ -7,7 +7,7 @@ export async function getPipelineByNabidka(nabidkaId: string) {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from("pipeline_entries")
-    .select("*, brigadnik:brigadnici(id, jmeno, prijmeni, email, telefon, dotaznik_vyplnen)")
+    .select("*, brigadnik:brigadnici(id, jmeno, prijmeni, email, telefon, dotaznik_vyplnen), naborar:users!pipeline_entries_naborar_id_fkey(jmeno, prijmeni)")
     .eq("nabidka_id", nabidkaId)
     .order("updated_at", { ascending: false })
 

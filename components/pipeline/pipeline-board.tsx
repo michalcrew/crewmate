@@ -26,6 +26,10 @@ type PipelineEntry = {
     telefon: string
     dotaznik_vyplnen: boolean
   } | null
+  naborar: {
+    jmeno: string
+    prijmeni: string
+  } | null
 }
 
 export function PipelineBoard({
@@ -101,7 +105,7 @@ function PipelineCard({
           </Link>
           <p className="text-xs text-muted-foreground">{b.telefon}</p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {b.dotaznik_vyplnen ? (
             <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">
               Údaje
@@ -109,6 +113,11 @@ function PipelineCard({
           ) : (
             <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px]">
               Bez údajů
+            </Badge>
+          )}
+          {entry.naborar && (
+            <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]">
+              {(entry.naborar as unknown as { jmeno: string; prijmeni: string }).jmeno} {(entry.naborar as unknown as { jmeno: string; prijmeni: string }).prijmeni?.charAt(0)}.
             </Badge>
           )}
         </div>
