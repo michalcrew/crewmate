@@ -22,10 +22,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[#000066]">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Crewmate</CardTitle>
+          <img src="/images/logo/crewmate-logo.svg" alt="Crewmate" className="h-8 mx-auto mb-2" />
+          <CardTitle className="text-2xl font-bold sr-only">Crewmate</CardTitle>
           <CardDescription>
             Přihlaste se do systému
           </CardDescription>
