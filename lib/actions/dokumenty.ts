@@ -223,31 +223,77 @@ export async function sendDppEmail(brigadnikId: string, mesic: string) {
 
   const { data: brigadnik } = await adminClient
     .from("brigadnici")
-    .select("id, jmeno, prijmeni, email")
+    .select("*")
     .eq("id", brigadnikId)
     .single()
 
   if (!brigadnik) return { error: "Brigádník nenalezen" }
+  if (!brigadnik.dotaznik_vyplnen) return { error: "Brigádník nemá vyplněný dotazník — nelze generovat DPP" }
 
   const mesicLabel = new Date(`${mesic}-01`).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })
 
-  // Get email template
-  const { data: template } = await adminClient
-    .from("email_sablony")
-    .select("predmet, obsah_html")
-    .eq("typ", "dpp")
-    .eq("aktivni", true)
-    .single()
+  // Decrypt sensitive data for PDF
+  let rodne_cislo = ""
+  let cislo_op = ""
+  try { if (brigadnik.rodne_cislo) rodne_cislo = decrypt(brigadnik.rodne_cislo) } catch { rodne_cislo = brigadnik.rodne_cislo ?? "" }
+  try { if (brigadnik.cislo_op) cislo_op = decrypt(brigadnik.cislo_op) } catch { cislo_op = brigadnik.cislo_op ?? "" }
 
-  const subject = (template?.predmet ?? "DPP k podpisu — {{mesic}} — Crewmate")
-    .replaceAll("{{jmeno}}", brigadnik.jmeno)
-    .replaceAll("{{mesic}}", mesicLabel)
-  const html = (template?.obsah_html ?? `<p>Ahoj ${brigadnik.jmeno}, v příloze DPP na ${mesicLabel}.</p>`)
-    .replaceAll("{{jmeno}}", brigadnik.jmeno)
-    .replaceAll("{{mesic}}", mesicLabel)
+  // Generate PDF
+  const { generateDppPdf } = await import("@/lib/pdf/generate-dpp-pdf")
+  const pdfBuffer = await generateDppPdf({
+    jmeno: brigadnik.jmeno,
+    prijmeni: brigadnik.prijmeni,
+    rodne_cislo,
+    datum_narozeni: brigadnik.datum_narozeni ?? "",
+    adresa: brigadnik.adresa ?? "",
+    cislo_op,
+    zdravotni_pojistovna: brigadnik.zdravotni_pojistovna ?? "",
+    cislo_uctu: brigadnik.cislo_uctu ?? "",
+    kod_banky: brigadnik.kod_banky ?? "",
+    mesicLabel,
+  })
+
+  const pdfFilename = `DPP_${brigadnik.prijmeni}_${brigadnik.jmeno}_${mesic}.pdf`
+
+  // Email with PDF attachment
+  const subject = `DPP k podpisu — ${mesicLabel} — Crewmate`
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2>Dobrý den, ${escapeHtml(brigadnik.jmeno)},</h2>
+      <p>v příloze Vám zasíláme <strong>Dohodu o provedení práce (DPP)</strong> na měsíc <strong>${escapeHtml(mesicLabel)}</strong>.</p>
+
+      <div style="background: #f5f5f5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <p style="margin: 0 0 8px 0;"><strong>Jak postupovat:</strong></p>
+        <ol style="margin: 0; padding-left: 20px;">
+          <li>Otevřete přílohu <strong>${escapeHtml(pdfFilename)}</strong></li>
+          <li>Vytiskněte dokument</li>
+          <li>Podepište na vyznačeném místě (zaměstnanec)</li>
+          <li>Naskenujte nebo vyfoťte <strong>celý podepsaný dokument</strong></li>
+          <li>Pošlete zpět na tento email jako přílohu</li>
+        </ol>
+      </div>
+
+      <p><strong>Alternativně</strong> můžete dokument podepsat digitálně (elektronický podpis) a zaslat zpět s dnešním datem.</p>
+
+      <p style="color: #666; font-size: 12px; margin-top: 24px;">
+        Pokud máte jakékoliv dotazy, neváhejte nás kontaktovat na team@crewmate.cz nebo +420 774 617 955.
+      </p>
+
+      <p>Děkujeme,<br/><strong>Tým Crewmate</strong></p>
+    </div>
+  `
 
   try {
-    await sendEmail({ to: brigadnik.email, subject, html })
+    await sendEmail({
+      to: brigadnik.email,
+      subject,
+      html,
+      attachments: [{
+        filename: pdfFilename,
+        content: pdfBuffer,
+        contentType: "application/pdf",
+      }],
+    })
   } catch {
     return { error: "Nepodařilo se odeslat email" }
   }
@@ -256,11 +302,15 @@ export async function sendDppEmail(brigadnikId: string, mesic: string) {
   const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, mesic)
   await updateDppStav(smluvniStav.id, brigadnikId, "odeslano")
 
+  // Get internal user for audit
+  const { data: internalUser } = await adminClient.from("users").select("id").eq("auth_user_id", user.id).single()
+
   // Audit log
   await adminClient.from("historie").insert({
     brigadnik_id: brigadnikId,
+    user_id: internalUser?.id,
     typ: "email_odeslan",
-    popis: `DPP odeslána emailem na ${brigadnik.email} (${mesicLabel})`,
+    popis: `DPP odeslána emailem s PDF přílohou na ${brigadnik.email} (${mesicLabel})`,
   })
 
   revalidatePath(`/app/brigadnici/${brigadnikId}`)
