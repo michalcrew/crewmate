@@ -142,3 +142,53 @@ export async function getHodinySouhrn(mesic: string) {
 
   return [...map.values()]
 }
+
+// Admin: recruitment performance metrics
+export async function getRecruitmentMetrics(mesic: string) {
+  const supabase = await createClient()
+
+  const start = `${mesic}-01`
+  const nextM = Number(mesic.split("-")[1]) === 12 ? 1 : Number(mesic.split("-")[1]) + 1
+  const nextY = Number(mesic.split("-")[1]) === 12 ? Number(mesic.split("-")[0]) + 1 : Number(mesic.split("-")[0])
+  const end = `${nextY}-${String(nextM).padStart(2, "0")}-01`
+
+  // Total hours this month
+  const { data: hodinyData } = await supabase
+    .from("naborar_hodiny")
+    .select("hodin")
+    .gte("datum", start)
+    .lt("datum", end)
+
+  const totalHours = (hodinyData ?? []).reduce((sum, h) => sum + Number(h.hodin), 0)
+
+  // Number of hired people this month (pipeline state changes to prijaty_vse_vyreseno)
+  const { data: hiredData } = await supabase
+    .from("pipeline_entries")
+    .select("id")
+    .eq("stav", "prijaty_vse_vyreseno")
+    .gte("updated_at", start)
+    .lt("updated_at", end)
+
+  const hiredCount = hiredData?.length ?? 0
+
+  // Number of events this month
+  const { data: akceData } = await supabase
+    .from("akce")
+    .select("id")
+    .gte("datum", start)
+    .lt("datum", end)
+
+  const eventCount = akceData?.length ?? 0
+
+  // Assumed hourly rate (can be made configurable)
+  const hourlyRate = 250 // Kč/hod
+
+  return {
+    totalHours,
+    hiredCount,
+    eventCount,
+    costPerHired: hiredCount > 0 ? Math.round((totalHours * hourlyRate) / hiredCount) : null,
+    costPerEvent: eventCount > 0 ? Math.round((totalHours * hourlyRate) / eventCount) : null,
+    totalCost: Math.round(totalHours * hourlyRate),
+  }
+}

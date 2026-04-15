@@ -5,11 +5,11 @@ import { Badge } from "@/components/ui/badge"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
-import { getMyHodiny, getHodinySouhrn, getAllHodiny } from "@/lib/actions/naborar-hodiny"
+import { getMyHodiny, getHodinySouhrn, getAllHodiny, getRecruitmentMetrics } from "@/lib/actions/naborar-hodiny"
 import { getCurrentUserRole } from "@/lib/actions/users"
 import { ZapsatHodinyDialog } from "@/components/hodiny/zapsat-hodiny-dialog"
 
-export const metadata: Metadata = { title: "Odpracované hodiny" }
+export const metadata: Metadata = { title: "Výkonnost náboru" }
 
 export default async function HodinyPage({
   searchParams,
@@ -30,11 +30,12 @@ export default async function HodinyPage({
   // Admin data
   const souhrn = isAdmin ? await getHodinySouhrn(mesic) : []
   const allHodiny = isAdmin ? await getAllHodiny(mesic) : []
+  const metrics = isAdmin ? await getRecruitmentMetrics(mesic) : null
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Odpracované hodiny</h1>
+        <h1 className="text-2xl font-semibold">{isAdmin ? "Výkonnost náboru" : "Odpracované hodiny"}</h1>
         <ZapsatHodinyDialog />
       </div>
 
@@ -51,6 +52,41 @@ export default async function HodinyPage({
           )
         })}
       </div>
+
+      {/* Recruitment metrics */}
+      {isAdmin && metrics && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Hodin celkem</p>
+              <p className="text-2xl font-bold">{metrics.totalHours.toFixed(1)}h</p>
+              <p className="text-xs text-muted-foreground">{metrics.totalCost.toLocaleString("cs-CZ")} Kč</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Nabráno lidí</p>
+              <p className="text-2xl font-bold">{metrics.hiredCount}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Náklad / nabraný</p>
+              <p className="text-2xl font-bold">
+                {metrics.costPerHired ? `${metrics.costPerHired.toLocaleString("cs-CZ")} Kč` : "—"}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Náklad / akce</p>
+              <p className="text-2xl font-bold">
+                {metrics.costPerEvent ? `${metrics.costPerEvent.toLocaleString("cs-CZ")} Kč` : "—"}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Admin overview */}
       {isAdmin && souhrn.length > 0 && (
