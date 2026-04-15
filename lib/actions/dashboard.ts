@@ -12,16 +12,17 @@ export async function getDashboardData() {
     .eq("stav", "aktivni")
     .order("created_at", { ascending: false })
 
-  // Blížící se akce (příštích 14 dní)
+  // Blížící se akce (příštích 30 dní)
   const today = new Date().toISOString().slice(0, 10)
-  const twoWeeks = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
+  const future = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
   const { data: akce } = await supabase
     .from("akce")
-    .select("id, nazev, datum, cas_od, misto, pocet_lidi, prirazeni(count)")
+    .select("id, nazev, datum, cas_od, misto, pocet_lidi, stav, prirazeni(count)")
     .gte("datum", today)
-    .lte("datum", twoWeeks)
-    .eq("stav", "planovana")
+    .lte("datum", future)
+    .in("stav", ["planovana", "probehla"])
     .order("datum", { ascending: true })
+    .limit(10)
 
   // Noví zájemci (posledních 7 dní)
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()

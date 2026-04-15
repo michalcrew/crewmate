@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -8,13 +8,18 @@ import { Button } from "@/components/ui/button"
 import { login } from "@/lib/actions/auth"
 
 export default function LoginPage() {
-  const [state, formAction, pending] = useActionState(
-    async (_prev: { error?: string } | null, formData: FormData) => {
-      const result = await login(formData)
-      return result ?? null
-    },
-    null
-  )
+  const [error, setError] = useState("")
+  const [pending, setPending] = useState(false)
+
+  async function handleSubmit(formData: FormData) {
+    setPending(true)
+    setError("")
+    const result = await login(formData)
+    if (result?.error) {
+      setError(result.error)
+    }
+    setPending(false)
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -26,7 +31,7 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={formAction} className="space-y-4">
+          <form action={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -46,8 +51,8 @@ export default function LoginPage() {
                 required
               />
             </div>
-            {state?.error && (
-              <p className="text-sm text-destructive">{state.error}</p>
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
             )}
             <Button type="submit" className="w-full" disabled={pending}>
               {pending ? "Přihlašuji..." : "Přihlásit se"}

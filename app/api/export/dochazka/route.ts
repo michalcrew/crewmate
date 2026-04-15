@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
   const start = `${mesic}-01`
   const [y, m] = mesic.split("-").map(Number)
-  const end = `${y}-${String((m ?? 0) + 1).padStart(2, "0")}-01`
+  const nextM = (m ?? 0) === 12 ? 1 : (m ?? 0) + 1; const nextY = (m ?? 0) === 12 ? (y ?? 0) + 1 : (y ?? 0); const end = `${nextY}-${String(nextM).padStart(2, "0")}-01`
 
   const { data } = await supabase
     .from("dochazka")

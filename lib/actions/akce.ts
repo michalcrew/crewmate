@@ -26,7 +26,7 @@ export async function getAkce(filter?: { mesic?: string }) {
   if (filter?.mesic) {
     const start = `${filter.mesic}-01`
     const [y, m] = filter.mesic.split("-").map(Number)
-    const end = `${y}-${String((m ?? 0) + 1).padStart(2, "0")}-01`
+    const nextM = (m ?? 0) === 12 ? 1 : (m ?? 0) + 1; const nextY = (m ?? 0) === 12 ? (y ?? 0) + 1 : (y ?? 0); const end = `${nextY}-${String(nextM).padStart(2, "0")}-01`
     query = query.gte("datum", start).lt("datum", end)
   }
 
