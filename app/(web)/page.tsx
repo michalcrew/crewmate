@@ -256,24 +256,24 @@ export default function HomePage() {
 
           {/* Other case studies */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {CASE_STUDIES.slice(1).map((cs) => (
-              <div key={cs.title} className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                <span className="text-xs font-semibold text-[#000066] uppercase tracking-widest">Case Study</span>
-                <h3 className="text-xl font-bold mt-2 mb-3">{cs.title}</h3>
-                <p className="text-sm text-gray-600 mb-4">{cs.desc}</p>
-                <ul className="space-y-2">
-                  {cs.stats.map((stat) => (
-                    <li key={stat} className="flex items-start gap-2 text-sm">
-                      <CheckCircle className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
-                      <span>{stat}</span>
-                    </li>
-                  ))}
-                </ul>
+            {CASE_STUDIES.slice(1).map((cs) => {
+              const mainStat = cs.stats[0] ?? ""
+              const [num, ...rest] = mainStat.split(" ")
+              return (
+              <div key={cs.title} className="bg-white rounded-xl p-8 border border-gray-200">
+                <h3 className="text-xl font-bold mb-2">{cs.title}</h3>
+                <p className="text-sm text-gray-600 mb-6">{cs.desc}</p>
+                <div>
+                  <span className="text-3xl md:text-4xl font-black">{num}</span>
+                  <span className="text-sm text-gray-500 ml-2">{rest.join(" ")}</span>
+                </div>
               </div>
-            ))}
+              )
+            })}
           </div>
-          <div className="mt-12 pt-12 border-t border-gray-200">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest text-center mb-6">Spolehliví partneři</p>
+          <div className="mt-16 pt-16 border-t border-gray-200 text-center">
+            <h3 className="text-2xl font-bold mb-2">Spolehliví partneři</h3>
+            <p className="text-gray-500 mb-8">Protože být expertem na vše nejde.</p>
             <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12 opacity-60">
               <img src="/images/partners/anybar.svg" alt="AnyBar" className="h-8 grayscale" style={{ filter: "brightness(0) invert(0.2)" }} />
               <img src="/images/partners/partner-1.png" alt="Partner" className="h-10 grayscale" style={{ filter: "brightness(0) invert(0.2)" }} />
