@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { decrypt } from "@/lib/utils/crypto"
+import { escapeHtml, isAllowedFileType, MAX_FILE_SIZE } from "@/lib/utils/sanitize"
 import { sendEmail } from "@/lib/email/resend"
 import { getOrCreateSmluvniStav, updateDppStav } from "./smluvni-stav"
 
@@ -36,6 +37,19 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
 
   const mesicLabel = new Date(`${mesic}-01`).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })
 
+  // Escape all user data for HTML
+  const safe = {
+    jmeno: escapeHtml(brigadnik.jmeno),
+    prijmeni: escapeHtml(brigadnik.prijmeni),
+    rodne_cislo: escapeHtml(rodne_cislo),
+    cislo_op: escapeHtml(cislo_op),
+    datum_narozeni: escapeHtml(brigadnik.datum_narozeni ?? ""),
+    adresa: escapeHtml(brigadnik.adresa ?? ""),
+    zdravotni_pojistovna: escapeHtml(brigadnik.zdravotni_pojistovna ?? ""),
+    cislo_uctu: escapeHtml(brigadnik.cislo_uctu ?? ""),
+    kod_banky: escapeHtml(brigadnik.kod_banky ?? ""),
+  }
+
   // Generate DPP content as HTML (placeholder — real DOCX template will be added later)
   const dppHtml = `
     <html><body style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px;">
@@ -46,13 +60,13 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     <p>Crewmate, s.r.o.<br/>IČO: 23782587</p>
     <h3>Zaměstnanec:</h3>
     <table style="width: 100%; border-collapse: collapse;">
-      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Jméno a příjmení</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${brigadnik.jmeno} ${brigadnik.prijmeni}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Rodné číslo</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${rodne_cislo}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Datum narození</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${brigadnik.datum_narozeni ?? ""}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Trvalé bydliště</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${brigadnik.adresa ?? ""}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Číslo OP</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${cislo_op}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Zdravotní pojišťovna</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${brigadnik.zdravotni_pojistovna ?? ""}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Číslo účtu</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${brigadnik.cislo_uctu ?? ""}/${brigadnik.kod_banky ?? ""}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Jméno a příjmení</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${safe.jmeno} ${safe.prijmeni}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Rodné číslo</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${safe.rodne_cislo}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Datum narození</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${safe.datum_narozeni}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Trvalé bydliště</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${safe.adresa}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Číslo OP</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${safe.cislo_op}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Zdravotní pojišťovna</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${safe.zdravotni_pojistovna}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #ccc;">Číslo účtu</td><td style="padding: 4px 8px; border: 1px solid #ccc;">${safe.cislo_uctu}/${safe.kod_banky}</td></tr>
     </table>
     <br/>
     <p><em>Toto je placeholder DPP. Po dodání DOCX šablony bude generováno z reálné šablony.</em></p>
@@ -182,7 +196,8 @@ export async function uploadPodpis(formData: FormData) {
   const file = formData.get("file") as File
 
   if (!file || file.size === 0) return { error: "Soubor je povinný" }
-  if (file.size > 20 * 1024 * 1024) return { error: "Soubor je příliš velký (max 20 MB)" }
+  if (file.size > MAX_FILE_SIZE) return { error: "Soubor je příliš velký (max 20 MB)" }
+  if (!isAllowedFileType(file.type)) return { error: "Nepodporovaný typ souboru. Povolené: PDF, JPG, PNG." }
 
   const { data: brigadnik } = await supabase
     .from("brigadnici")

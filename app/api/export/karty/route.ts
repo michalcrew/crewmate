@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { decrypt } from "@/lib/utils/crypto"
 import ExcelJS from "exceljs"
 
 export async function GET(request: NextRequest) {
@@ -56,13 +57,18 @@ export async function GET(request: NextRequest) {
   ]
 
   for (const b of brigadnici ?? []) {
+    let rc = b.rodne_cislo ?? ""
+    let op = b.cislo_op ?? ""
+    try { if (rc && rc.includes(":")) rc = decrypt(rc) } catch { /* not encrypted */ }
+    try { if (op && op.includes(":")) op = decrypt(op) } catch { /* not encrypted */ }
+
     ws.addRow({
       jmeno: b.jmeno,
       prijmeni: b.prijmeni,
-      rodne_cislo: b.rodne_cislo ?? "",
+      rodne_cislo: rc,
       datum_narozeni: b.datum_narozeni ?? "",
       adresa: b.adresa ?? "",
-      cislo_op: b.cislo_op ?? "",
+      cislo_op: op,
       zp: b.zdravotni_pojistovna ?? "",
       ucet: b.cislo_uctu ? `${b.cislo_uctu}/${b.kod_banky ?? ""}` : "",
       vzdelani: b.vzdelani ?? "",
