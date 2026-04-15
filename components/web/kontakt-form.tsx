@@ -66,7 +66,7 @@ export function KontaktForm() {
           </Label>
         </div>
         {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
-        <Button type="submit" size="lg" className="w-full bg-[#1a1a4e] hover:bg-[#2a2a6e] text-white rounded-full" disabled={pending}>
+        <Button type="submit" size="lg" className="w-full bg-[#000066] hover:bg-[#1a1a7e] text-white rounded-full" disabled={pending}>
           {pending ? "Odesílám..." : "Odeslat poptávku"}
         </Button>
       </form>

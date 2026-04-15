@@ -25,7 +25,7 @@ export default async function PracePage() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
       <div className="mb-12">
-        <p className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest mb-3">Brigády</p>
+        <p className="text-xs font-semibold text-[#000066] uppercase tracking-widest mb-3">Brigády</p>
         <h1 className="text-3xl md:text-5xl font-black mb-4">Volné pozice</h1>
         <p className="text-gray-600 text-lg max-w-lg">
           Přidejte se k našemu týmu. Flexibilní brigády na eventových akcích po celé ČR.
@@ -39,7 +39,7 @@ export default async function PracePage() {
           </p>
           <p className="text-gray-400">
             Zkuste to později nebo nám napište na{" "}
-            <a href="mailto:team@crewmate.cz" className="text-[#1a1a4e] hover:underline font-medium">
+            <a href="mailto:team@crewmate.cz" className="text-[#000066] hover:underline font-medium">
               team@crewmate.cz
             </a>
           </p>
@@ -48,15 +48,15 @@ export default async function PracePage() {
         <div className="space-y-4">
           {nabidky.map((n) => (
             <Link key={n.id} href={`/prace/${n.slug}`} className="group block">
-              <div className="border border-gray-200 rounded-xl p-6 hover:border-[#1a1a4e]/30 hover:shadow-lg transition-all">
+              <div className="border border-gray-200 rounded-xl p-6 hover:border-[#000066]/30 hover:shadow-lg transition-all">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <h2 className="text-xl font-bold group-hover:text-[#1a1a4e] transition-colors">{n.nazev}</h2>
+                    <h2 className="text-xl font-bold group-hover:text-[#000066] transition-colors">{n.nazev}</h2>
                     {n.klient && (
                       <p className="text-sm text-gray-500 mt-0.5">{n.klient}</p>
                     )}
                   </div>
-                  <span className="text-xs font-medium text-[#1a1a4e] bg-[#1a1a4e]/5 px-3 py-1 rounded-full shrink-0">
+                  <span className="text-xs font-medium text-[#000066] bg-[#000066]/5 px-3 py-1 rounded-full shrink-0">
                     {n.typ === "prubezna" ? "Průběžně" : "Jednorázová"}
                   </span>
                 </div>
@@ -76,7 +76,7 @@ export default async function PracePage() {
                       </span>
                     )}
                   </div>
-                  <span className="text-sm text-[#1a1a4e] font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span className="text-sm text-[#000066] font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     Detail <ArrowRight className="h-3.5 w-3.5" />
                   </span>
                 </div>

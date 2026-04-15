@@ -12,8 +12,8 @@ export default function WebLayout({
       {/* Navigation */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/" className="text-xl font-black tracking-tight">
-            CREW<br className="hidden" />MATE
+          <Link href="/" className="block">
+            <img src="/images/logo/crewmate-logo.svg" alt="Crewmate" className="h-8" />
           </Link>
           <nav className="hidden md:flex items-center gap-8">
             <Link href="/#sluzby" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
@@ -37,7 +37,7 @@ export default function WebLayout({
               Chci brigádu
             </Link>
             <Link href="/#kontakt">
-              <Button className="bg-[#1a1a4e] hover:bg-[#2a2a6e] text-white rounded-full px-6">
+              <Button className="bg-[#000066] hover:bg-[#1a1a7e] text-white rounded-full px-6">
                 Poptávka
               </Button>
             </Link>
@@ -51,11 +51,11 @@ export default function WebLayout({
       </main>
 
       {/* Footer */}
-      <footer className="bg-[#0f0f2e] text-white">
+      <footer className="bg-[#000044] text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
             <div>
-              <p className="text-xl font-black mb-2">CREWMATE</p>
+              <img src="/images/logo/crewmate-logotyp.svg" alt="Crewmate" className="h-8 mb-2 brightness-0 invert" />
               <p className="text-gray-400 text-sm">Tvůj event. Náš team.</p>
             </div>
             <div>

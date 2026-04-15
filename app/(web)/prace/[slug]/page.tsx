@@ -51,7 +51,7 @@ export default async function NabidkaPublicPage({
         {/* Detail */}
         <div className="lg:col-span-3">
           <div className="mb-2">
-            <span className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest">
+            <span className="text-xs font-semibold text-[#000066] uppercase tracking-widest">
               {nabidka.typ === "prubezna" ? "Průběžný nábor" : "Jednorázová akce"}
             </span>
           </div>
@@ -64,22 +64,22 @@ export default async function NabidkaPublicPage({
           <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-8 pb-8 border-b border-gray-200">
             {nabidka.misto && (
               <span className="flex items-center gap-1.5">
-                <MapPin className="h-4 w-4 text-[#1a1a4e]" /> {nabidka.misto}
+                <MapPin className="h-4 w-4 text-[#000066]" /> {nabidka.misto}
               </span>
             )}
             {nabidka.odmena && (
               <span className="flex items-center gap-1.5 font-semibold text-gray-900">
-                <Banknote className="h-4 w-4 text-[#1a1a4e]" /> {nabidka.odmena}
+                <Banknote className="h-4 w-4 text-[#000066]" /> {nabidka.odmena}
               </span>
             )}
             {nabidka.pocet_lidi && (
               <span className="flex items-center gap-1.5">
-                <Users className="h-4 w-4 text-[#1a1a4e]" /> {nabidka.pocet_lidi} lidí / směna
+                <Users className="h-4 w-4 text-[#000066]" /> {nabidka.pocet_lidi} lidí / směna
               </span>
             )}
             {nabidka.datum_od && (
               <span className="flex items-center gap-1.5">
-                <Calendar className="h-4 w-4 text-[#1a1a4e]" />
+                <Calendar className="h-4 w-4 text-[#000066]" />
                 {new Date(nabidka.datum_od).toLocaleDateString("cs-CZ")}
                 {nabidka.datum_do && ` — ${new Date(nabidka.datum_do).toLocaleDateString("cs-CZ")}`}
               </span>

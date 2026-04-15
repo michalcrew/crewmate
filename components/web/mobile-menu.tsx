@@ -44,7 +44,7 @@ export function MobileMenu() {
                 <Button variant="outline" className="w-full rounded-full">Chci brigádu</Button>
               </Link>
               <Link href="/#kontakt" onClick={() => setOpen(false)}>
-                <Button className="w-full bg-[#1a1a4e] hover:bg-[#2a2a6e] text-white rounded-full">Poptávka</Button>
+                <Button className="w-full bg-[#000066] hover:bg-[#1a1a7e] text-white rounded-full">Poptávka</Button>
               </Link>
             </div>
           </nav>

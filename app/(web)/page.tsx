@@ -85,16 +85,16 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-28">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
-              <p className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest mb-4">Event Crew Professionals</p>
+              <p className="text-xs font-semibold text-[#000066] uppercase tracking-widest mb-4">Event Crew Professionals</p>
               <h1 className="text-5xl md:text-7xl font-black leading-[0.95] tracking-tight mb-6">
-                Tvůj<br />event.<br /><em className="text-[#1a1a4e]">Náš<br />team.</em>
+                Tvůj<br />event.<br /><em className="text-[#000066]">Náš<br />team.</em>
               </h1>
               <p className="text-lg text-gray-600 mb-8 max-w-md">
                 <strong>Všechny klíčové role na jednom místě.</strong> Funkční, sehrané, připravené týmy — od vstupů až po zázemí.
               </p>
               <div className="flex flex-wrap gap-4">
                 <Link href="#kontakt">
-                  <Button size="lg" className="bg-[#1a1a4e] hover:bg-[#2a2a6e] text-white rounded-full px-8 gap-2">
+                  <Button size="lg" className="bg-[#000066] hover:bg-[#1a1a7e] text-white rounded-full px-8 gap-2">
                     Poptejte spolupráci <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
@@ -112,8 +112,13 @@ export default function HomePage() {
               </div>
             </div>
             <div className="relative hidden lg:block">
-              <div className="aspect-[4/5] rounded-2xl bg-gradient-to-br from-[#1a1a4e] to-[#3a3a8e] flex items-end overflow-hidden">
-                <div className="bg-[#0f0f2e] p-4 w-full">
+              <div className="aspect-[4/5] rounded-2xl overflow-hidden relative">
+                <img
+                  src="/images/events/event-1.jpg"
+                  alt="Crewmate eventový personál"
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+                <div className="absolute bottom-0 left-0 right-0 bg-[#000044]/90 backdrop-blur-sm p-4">
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Obsazujeme role</p>
                   <div className="flex flex-wrap gap-2">
                     {ROLES.map((role) => (
@@ -130,12 +135,12 @@ export default function HomePage() {
       {/* Služby */}
       <section id="sluzby" className="py-16 md:py-24 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest mb-3">Služby</p>
+          <p className="text-xs font-semibold text-[#000066] uppercase tracking-widest mb-3">Služby</p>
           <h2 className="text-3xl md:text-5xl font-black mb-4">Obsadíme každou roli<br className="hidden sm:block" />vašeho eventu</h2>
           <p className="text-gray-600 mb-12 max-w-lg">Kompletní týmy pro akce jakékoliv velikosti.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {SERVICES.map((s) => (
-              <div key={s.num} className="bg-white rounded-xl p-6 border border-gray-100 hover:border-[#1a1a4e]/20 hover:shadow-lg transition-all">
+              <div key={s.num} className="bg-white rounded-xl p-6 border border-gray-100 hover:border-[#000066]/20 hover:shadow-lg transition-all">
                 <div className="flex items-start gap-3 mb-3">
                   <span className="text-xs text-gray-400 font-mono mt-1">{s.num}</span>
                   <div>
@@ -157,13 +162,13 @@ export default function HomePage() {
       {/* Jak pracujeme */}
       <section className="py-16 md:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest mb-3">Jak pracujeme</p>
+          <p className="text-xs font-semibold text-[#000066] uppercase tracking-widest mb-3">Jak pracujeme</p>
           <h2 className="text-3xl md:text-5xl font-black mb-12">Stavíme funkční týmy</h2>
           <p className="text-gray-600 mb-12 max-w-lg">Jsme partner, který staví funkční týmy pro vaše akce.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {HOW_WE_WORK.map((item) => (
               <div key={item.title} className="text-center">
-                <item.icon className="h-8 w-8 text-[#1a1a4e] mx-auto mb-3" />
+                <item.icon className="h-8 w-8 text-[#000066] mx-auto mb-3" />
                 <h3 className="font-bold mb-1">{item.title}</h3>
                 <p className="text-sm text-gray-600">{item.desc}</p>
               </div>
@@ -175,7 +180,7 @@ export default function HomePage() {
       {/* Spolupráce — 4 kroky */}
       <section id="jak-to-funguje" className="py-16 md:py-24 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest mb-3">Spolupráce</p>
+          <p className="text-xs font-semibold text-[#000066] uppercase tracking-widest mb-3">Spolupráce</p>
           <h2 className="text-3xl md:text-5xl font-black mb-12">Jak probíhá spolupráce?</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {COOPERATION_STEPS.map((step) => (
@@ -188,7 +193,7 @@ export default function HomePage() {
           </div>
           <div className="mt-12">
             <Link href="#kontakt">
-              <Button size="lg" className="bg-[#1a1a4e] hover:bg-[#2a2a6e] text-white rounded-full px-8 gap-2">
+              <Button size="lg" className="bg-[#000066] hover:bg-[#1a1a7e] text-white rounded-full px-8 gap-2">
                 Začněte úvodní konzultací <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
@@ -199,12 +204,12 @@ export default function HomePage() {
       {/* Zkušenosti / Case Studies */}
       <section id="zkusenosti" className="py-16 md:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest mb-3">Co jsme zvládli</p>
+          <p className="text-xs font-semibold text-[#000066] uppercase tracking-widest mb-3">Co jsme zvládli</p>
           <h2 className="text-3xl md:text-5xl font-black mb-12">Zkušenosti</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {CASE_STUDIES.map((cs) => (
               <div key={cs.title} className="bg-gray-50 rounded-xl p-6 border border-gray-100">
-                <span className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest">Case Study</span>
+                <span className="text-xs font-semibold text-[#000066] uppercase tracking-widest">Case Study</span>
                 <h3 className="text-xl font-bold mt-2 mb-3">{cs.title}</h3>
                 <p className="text-sm text-gray-600 mb-4">{cs.desc}</p>
                 <ul className="space-y-2">
@@ -218,14 +223,19 @@ export default function HomePage() {
               </div>
             ))}
           </div>
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-500">Spolehliví partneři — protože být expertem na vše nejde.</p>
+          <div className="mt-12 pt-12 border-t border-gray-200">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest text-center mb-6">Spolehliví partneři</p>
+            <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12 opacity-60">
+              <img src="/images/partners/anybar.svg" alt="AnyBar" className="h-8 grayscale" style={{ filter: "brightness(0) invert(0.2)" }} />
+              <img src="/images/partners/partner-1.png" alt="Partner" className="h-10 grayscale" style={{ filter: "brightness(0) invert(0.2)" }} />
+              <img src="/images/partners/uklidovi-hrdinove.jpg" alt="Úklidoví hrdinové" className="h-10 grayscale rounded" style={{ filter: "brightness(0) invert(0.2)" }} />
+            </div>
           </div>
         </div>
       </section>
 
       {/* Pro uchazeče — Brigády */}
-      <section id="brigady" className="py-16 md:py-24 bg-[#1a1a4e] text-white">
+      <section id="brigady" className="py-16 md:py-24 bg-[#000066] text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
@@ -235,7 +245,7 @@ export default function HomePage() {
                 Hledáme spolehlivé lidi pro zajímavé akce. Flexibilně, podle svého.
               </p>
               <Link href="/prace">
-                <Button size="lg" className="bg-white text-[#1a1a4e] hover:bg-gray-100 rounded-full px-8 gap-2 font-bold">
+                <Button size="lg" className="bg-white text-[#000066] hover:bg-gray-100 rounded-full px-8 gap-2 font-bold">
                   Chci brigádu <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
@@ -258,13 +268,13 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
             <div>
-              <p className="text-xs font-semibold text-[#1a1a4e] uppercase tracking-widest mb-3">Kontakt</p>
+              <p className="text-xs font-semibold text-[#000066] uppercase tracking-widest mb-3">Kontakt</p>
               <h2 className="text-3xl md:text-5xl font-black mb-6">Poptejte spolupráci</h2>
               <p className="text-gray-600 mb-8">Rádi si o eventu promluvíme. Popište nám stručně akci a my se ozveme do 24 hodin s nezávazným návrhem řešení.</p>
               <div className="space-y-3 text-sm">
-                <p><strong>Email:</strong> <a href="mailto:team@crewmate.cz" className="text-[#1a1a4e] hover:underline">team@crewmate.cz</a></p>
-                <p><strong>Infolinka:</strong> <a href="tel:+420774617955" className="text-[#1a1a4e] hover:underline">+420 774 617 955</a></p>
-                <p><strong>Instagram:</strong> <a href="https://instagram.com/crewmate.cz" className="text-[#1a1a4e] hover:underline">@crewmate.cz</a></p>
+                <p><strong>Email:</strong> <a href="mailto:team@crewmate.cz" className="text-[#000066] hover:underline">team@crewmate.cz</a></p>
+                <p><strong>Infolinka:</strong> <a href="tel:+420774617955" className="text-[#000066] hover:underline">+420 774 617 955</a></p>
+                <p><strong>Instagram:</strong> <a href="https://instagram.com/crewmate.cz" className="text-[#000066] hover:underline">@crewmate.cz</a></p>
               </div>
             </div>
             <div>
