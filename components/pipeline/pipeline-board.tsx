@@ -94,7 +94,7 @@ export function PipelineBoard({
         ))}
       </div>
       <DragOverlay>
-        {activeEntry && <PipelineCardContent entry={activeEntry} isDragging />}
+        {activeEntry && <PipelineCardContent entry={activeEntry} isDragging nabidkaId="" />}
       </DragOverlay>
     </DndContext>
   )
@@ -126,7 +126,7 @@ function DroppableColumn({
       </div>
       <div className="space-y-2">
         {entries.map((entry) => (
-          <DraggableCard key={entry.id} entry={entry} />
+          <DraggableCard key={entry.id} entry={entry} nabidkaId={nabidkaId} />
         ))}
         {entries.length === 0 && (
           <div className="border border-dashed rounded-lg p-4 text-center text-xs text-muted-foreground">
@@ -138,7 +138,7 @@ function DroppableColumn({
   )
 }
 
-function DraggableCard({ entry }: { entry: PipelineEntry }) {
+function DraggableCard({ entry, nabidkaId }: { entry: PipelineEntry; nabidkaId: string }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: entry.id,
   })
@@ -155,12 +155,43 @@ function DraggableCard({ entry }: { entry: PipelineEntry }) {
       {...attributes}
       className={`cursor-grab active:cursor-grabbing ${isDragging ? "opacity-30" : ""}`}
     >
-      <PipelineCardContent entry={entry} />
+      <PipelineCardContent entry={entry} nabidkaId={nabidkaId} />
     </div>
   )
 }
 
-function PipelineCardContent({ entry, isDragging }: { entry: PipelineEntry; isDragging?: boolean }) {
+function MobileStateSelect({ entry, nabidkaId }: { entry: PipelineEntry; nabidkaId: string }) {
+  const [isPending, startTransition] = useTransition()
+
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const newStav = e.target.value
+    if (newStav === entry.stav) return
+    const stavLabel = PIPELINE_STATES[newStav as keyof typeof PIPELINE_STATES]?.label ?? newStav
+    startTransition(async () => {
+      const result = await updatePipelineStav(entry.id, newStav, nabidkaId)
+      if (result.error) {
+        toast.error(result.error)
+      } else {
+        toast.success(`Stav změněn na: ${stavLabel}`)
+      }
+    })
+  }
+
+  return (
+    <select
+      value={entry.stav}
+      onChange={handleChange}
+      disabled={isPending}
+      className="md:hidden w-full mt-1 text-xs rounded border border-input bg-background px-2 py-1"
+    >
+      {Object.entries(PIPELINE_STATES).map(([k, v]) => (
+        <option key={k} value={k}>{v.label}</option>
+      ))}
+    </select>
+  )
+}
+
+function PipelineCardContent({ entry, isDragging, nabidkaId }: { entry: PipelineEntry; isDragging?: boolean; nabidkaId?: string }) {
   const b = entry.brigadnik
   if (!b) return null
 
@@ -193,6 +224,8 @@ function PipelineCardContent({ entry, isDragging }: { entry: PipelineEntry; isDr
             </Badge>
           )}
         </div>
+        {/* Mobile fallback: select dropdown instead of D&D */}
+        {nabidkaId && <MobileStateSelect entry={entry} nabidkaId={nabidkaId} />}
       </CardContent>
     </Card>
   )
