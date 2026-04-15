@@ -8,6 +8,7 @@ import {
   Users,
   Calendar,
   BarChart3,
+  Clock,
   FileText,
   Settings,
 } from "lucide-react"
@@ -20,6 +21,7 @@ const ICONS = {
   Users,
   Calendar,
   BarChart3,
+  Clock,
   FileText,
   Settings,
 } as const

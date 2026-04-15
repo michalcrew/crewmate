@@ -8,6 +8,7 @@ export const NAV_ITEMS = [
   { label: "Brigádníci", href: "/app/brigadnici", icon: "Users" },
   { label: "Akce", href: "/app/akce", icon: "Calendar" },
   { label: "Měsíční přehled", href: "/app/prehled-mesic", icon: "BarChart3" },
+  { label: "Moje hodiny", href: "/app/hodiny", icon: "Clock" },
   { label: "Šablony", href: "/app/sablony", icon: "FileText" },
   { label: "Nastavení", href: "/app/nastaveni", icon: "Settings" },
 ] as const
