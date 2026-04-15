@@ -1,14 +1,21 @@
-import type { Metadata } from "next"
+"use client"
+
+import { useActionState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-
-export const metadata: Metadata = {
-  title: "Přihlášení",
-}
+import { login } from "@/lib/actions/auth"
 
 export default function LoginPage() {
+  const [state, formAction, pending] = useActionState(
+    async (_prev: { error?: string } | null, formData: FormData) => {
+      const result = await login(formData)
+      return result ?? null
+    },
+    null
+  )
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="w-full max-w-sm">
@@ -19,12 +26,12 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* TODO: F-0003 — napojit na Supabase Auth */}
-          <form className="space-y-4">
+          <form action={formAction} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
+                name="email"
                 type="email"
                 placeholder="vas@email.cz"
                 required
@@ -34,12 +41,16 @@ export default function LoginPage() {
               <Label htmlFor="password">Heslo</Label>
               <Input
                 id="password"
+                name="password"
                 type="password"
                 required
               />
             </div>
-            <Button type="submit" className="w-full">
-              Přihlásit se
+            {state?.error && (
+              <p className="text-sm text-destructive">{state.error}</p>
+            )}
+            <Button type="submit" className="w-full" disabled={pending}>
+              {pending ? "Přihlašuji..." : "Přihlásit se"}
             </Button>
           </form>
         </CardContent>
