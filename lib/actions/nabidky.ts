@@ -82,6 +82,38 @@ export async function createNabidka(formData: FormData) {
   return { success: true }
 }
 
+export async function updateNabidka(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const raw = Object.fromEntries(formData.entries())
+  const parsed = nabidkaSchema.safeParse({
+    ...raw,
+    zverejnena: raw.zverejnena === "on",
+    pocet_lidi: raw.pocet_lidi || undefined,
+  })
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
+  }
+
+  const { error } = await supabase
+    .from("nabidky")
+    .update({
+      ...parsed.data,
+      datum_od: parsed.data.datum_od || null,
+      datum_do: parsed.data.datum_do || null,
+    })
+    .eq("id", id)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/app/nabidky/${id}`)
+  revalidatePath("/app/nabidky")
+  return { success: true }
+}
+
 export async function updateNabidkaStav(id: string, stav: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

@@ -9,7 +9,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { getAkceById, getAkcePrirazeni } from "@/lib/actions/akce"
-import { DPP_STATES } from "@/lib/constants"
+import { getBrigadnici } from "@/lib/actions/brigadnici"
+import { AddPrirazeniDialog } from "@/components/akce/add-prirazeni-dialog"
 
 export const metadata: Metadata = { title: "Detail akce" }
 
@@ -22,9 +23,16 @@ export default async function AkceDetailPage({
   const akce = await getAkceById(id)
   if (!akce) notFound()
 
-  const prirazeni = await getAkcePrirazeni(id)
+  const [prirazeni, allBrigadnici] = await Promise.all([
+    getAkcePrirazeni(id),
+    getBrigadnici(),
+  ])
   const prirazeniCount = prirazeni.filter((p) => p.status === "prirazeny").length
   const nahradniciCount = prirazeni.filter((p) => p.status === "nahradnik").length
+  const prirazeniIds = new Set(prirazeni.map(p => (p.brigadnik as unknown as { id: string })?.id))
+  const availableBrigadnici = (allBrigadnici ?? [])
+    .filter(b => !prirazeniIds.has(b.id))
+    .map(b => ({ id: b.id, jmeno: b.jmeno, prijmeni: b.prijmeni, telefon: b.telefon }))
 
   return (
     <div>
@@ -75,8 +83,9 @@ export default async function AkceDetailPage({
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Přiřazení brigádníci</CardTitle>
+          <AddPrirazeniDialog akceId={id} brigadnici={availableBrigadnici} />
         </CardHeader>
         <CardContent>
           {prirazeni.length === 0 ? (

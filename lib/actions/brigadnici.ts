@@ -77,6 +77,31 @@ export async function createBrigadnik(formData: FormData) {
   return { success: true, id: data.id }
 }
 
+export async function updateBrigadnik(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const raw = Object.fromEntries(formData.entries())
+
+  const { error } = await supabase
+    .from("brigadnici")
+    .update({
+      jmeno: raw.jmeno as string || undefined,
+      prijmeni: raw.prijmeni as string || undefined,
+      email: raw.email as string || undefined,
+      telefon: raw.telefon as string || undefined,
+      poznamky: (raw.poznamky as string) || null,
+    })
+    .eq("id", id)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/app/brigadnici/${id}`)
+  revalidatePath("/app/brigadnici")
+  return { success: true }
+}
+
 export async function getBrigadnikById(id: string) {
   const supabase = await createClient()
   const { data, error } = await supabase

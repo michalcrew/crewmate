@@ -23,6 +23,7 @@ import {
 import { PIPELINE_STATES, DPP_STATES } from "@/lib/constants"
 import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button"
 import { GenerateDppButton, SendDppButton, UploadPodpisForm } from "@/components/brigadnici/dpp-actions"
+import { EditBrigadnikDialog } from "@/components/brigadnici/edit-brigadnik-dialog"
 
 export const metadata: Metadata = {
   title: "Detail brigádníka",
@@ -67,11 +68,12 @@ export default async function BrigadnikDetailPage({
             )}
           </div>
         </div>
-        {!brigadnik.dotaznik_vyplnen && (
-          <div className="ml-auto">
+        <div className="ml-auto flex gap-2">
+          <EditBrigadnikDialog brigadnik={brigadnik} />
+          {!brigadnik.dotaznik_vyplnen && (
             <SendDotaznikButton brigadnikId={brigadnik.id} />
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <Tabs defaultValue="prehled">
