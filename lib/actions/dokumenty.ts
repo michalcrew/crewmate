@@ -52,6 +52,7 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
   }
 
   // Load DPP template from DB
+  const adminClient = createAdminClient()
   const { data: sablona } = await adminClient
     .from("dokument_sablony")
     .select("obsah_html")
