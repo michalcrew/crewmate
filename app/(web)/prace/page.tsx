@@ -19,8 +19,32 @@ async function getPublicNabidky() {
   return data ?? []
 }
 
-export default async function PracePage() {
-  const nabidky = await getPublicNabidky()
+function extractCities(nabidky: { misto: string | null }[]): string[] {
+  const cities = new Set<string>()
+  for (const n of nabidky) {
+    if (n.misto) {
+      // Extract city name — take last part after comma, or full value
+      const parts = n.misto.split(",").map(s => s.trim())
+      const city = parts[parts.length - 1] ?? n.misto
+      if (city) cities.add(city)
+    }
+  }
+  return Array.from(cities).sort()
+}
+
+export default async function PracePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mesto?: string }>
+}) {
+  const params = await searchParams
+  const allNabidky = await getPublicNabidky()
+  const cities = extractCities(allNabidky)
+  const selectedCity = params.mesto ?? ""
+
+  const nabidky = selectedCity
+    ? allNabidky.filter(n => n.misto?.toLowerCase().includes(selectedCity.toLowerCase()))
+    : allNabidky
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
@@ -31,6 +55,31 @@ export default async function PracePage() {
           Přidejte se k našemu týmu. Flexibilní brigády na eventových akcích po celé ČR.
         </p>
       </div>
+
+      {cities.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-8">
+          <Link href="/prace">
+            <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer ${
+              !selectedCity
+                ? "bg-[#000066] text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}>
+              Celá ČR
+            </span>
+          </Link>
+          {cities.map((city) => (
+            <Link key={city} href={`/prace?mesto=${encodeURIComponent(city)}`}>
+              <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer ${
+                selectedCity === city
+                  ? "bg-[#000066] text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}>
+                {city}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {nabidky.length === 0 ? (
         <div className="text-center py-20 bg-gray-50 rounded-2xl">
