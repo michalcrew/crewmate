@@ -230,8 +230,33 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <p className="text-xs font-semibold text-[#000066] uppercase tracking-widest mb-3">Co jsme zvládli</p>
           <h2 className="text-3xl md:text-5xl font-black mb-12">Zkušenosti</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {CASE_STUDIES.map((cs) => (
+
+          {/* Photo strip */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-8 rounded-xl overflow-hidden">
+            <div className="aspect-[4/3] relative"><Image src="/images/events/signal-1.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
+            <div className="aspect-[4/3] relative"><Image src="/images/events/signal-2.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
+            <div className="aspect-[4/3] relative"><Image src="/images/events/signal-3.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
+            <div className="aspect-[4/3] relative"><Image src="/images/events/signal-4.jpg" alt="" fill className="object-cover" sizes="25vw" /></div>
+          </div>
+
+          {/* SIGNAL case study — navy bg */}
+          <div className="bg-[#000066] text-white rounded-xl p-8 md:p-12 mb-8">
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Case Study</span>
+            <h3 className="text-2xl md:text-3xl font-black mt-2 mb-4">SIGNAL Festival 2025</h3>
+            <p className="text-gray-300 mb-8 max-w-2xl">{CASE_STUDIES[0]?.desc}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {CASE_STUDIES[0]?.stats.map((stat) => (
+                <div key={stat} className="flex items-start gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
+                  <span className="text-sm">{stat}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Other case studies */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {CASE_STUDIES.slice(1).map((cs) => (
               <div key={cs.title} className="bg-gray-50 rounded-xl p-6 border border-gray-100">
                 <span className="text-xs font-semibold text-[#000066] uppercase tracking-widest">Case Study</span>
                 <h3 className="text-xl font-bold mt-2 mb-3">{cs.title}</h3>
