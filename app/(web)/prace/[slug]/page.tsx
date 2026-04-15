@@ -94,7 +94,7 @@ export default async function NabidkaPublicPage({
       </div>
 
       <div className="border-t border-border pt-8">
-        <h2 className="text-2xl font-bold mb-6">Přihlášení</h2>
+        <h2 className="text-2xl font-bold mb-6">Mám zájem o tuto pozici</h2>
         <PrihlaskaForm nabidkaId={nabidka.id} />
       </div>
     </div>

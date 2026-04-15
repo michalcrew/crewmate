@@ -10,6 +10,8 @@ import { getPipelineByNabidka } from "@/lib/actions/pipeline"
 import { PipelineBoard } from "@/components/pipeline/pipeline-board"
 import { PIPELINE_STATES } from "@/lib/constants"
 import { EditNabidkaDialog } from "@/components/nabidky/edit-nabidka-dialog"
+import { AddToPipelineDialog } from "@/components/pipeline/add-to-pipeline-dialog"
+import { getBrigadnici } from "@/lib/actions/brigadnici"
 
 export const metadata: Metadata = {
   title: "Detail nabídky",
@@ -24,7 +26,14 @@ export default async function NabidkaDetailPage({
   const nabidka = await getNabidkaById(id)
   if (!nabidka) notFound()
 
-  const pipeline = await getPipelineByNabidka(id)
+  const [pipeline, allBrigadnici] = await Promise.all([
+    getPipelineByNabidka(id),
+    getBrigadnici(),
+  ])
+  const pipelineIds = new Set(pipeline.map(p => (p.brigadnik as unknown as { id: string })?.id))
+  const availableBrigadnici = (allBrigadnici ?? [])
+    .filter(b => !pipelineIds.has(b.id))
+    .map(b => ({ id: b.id, jmeno: b.jmeno, prijmeni: b.prijmeni, telefon: b.telefon, email: b.email }))
 
   const pipelineByStav = Object.keys(PIPELINE_STATES).reduce(
     (acc, stav) => {
@@ -65,9 +74,12 @@ export default async function NabidkaDetailPage({
       </div>
 
       <div className="mb-6">
-        <h2 className="text-lg font-medium mb-3">
-          Pipeline ({pipeline.length} brigádník{pipeline.length === 1 ? "" : pipeline.length < 5 ? "i" : "ů"})
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-medium">
+            Pipeline ({pipeline.length} brigádník{pipeline.length === 1 ? "" : pipeline.length < 5 ? "i" : "ů"})
+          </h2>
+          <AddToPipelineDialog nabidkaId={id} brigadnici={availableBrigadnici} />
+        </div>
         <PipelineBoard
           nabidkaId={id}
           pipelineByStav={pipelineByStav}
