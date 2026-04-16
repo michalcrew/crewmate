@@ -43,20 +43,37 @@ export default async function PrehledMesicPage({
   const mesic = params.mesic ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
   const data = await getMesicniData(mesic)
 
+  // Safe hours calculation (handles midnight crossing when DB computed column fails)
+  function safeHours(d: { prichod: string | null; odchod: string | null; hodin_celkem: number | null }): number {
+    const h = Number(d.hodin_celkem ?? 0)
+    if (h > 0) return h
+    // Fallback: compute from prichod/odchod if DB value is 0 or negative
+    if (d.prichod && d.odchod) {
+      const [ph, pm] = d.prichod.split(":").map(Number)
+      const [oh, om] = d.odchod.split(":").map(Number)
+      const pMin = (ph ?? 0) * 60 + (pm ?? 0)
+      const oMin = (oh ?? 0) * 60 + (om ?? 0)
+      const diff = oMin > pMin ? oMin - pMin : (oMin + 1440) - pMin
+      return Math.round(diff / 6) / 10 // round to 1 decimal
+    }
+    return 0
+  }
+
   // Aggregate per brigadnik
   const perBrigadnik = new Map<string, { jmeno: string; prijmeni: string; hodin: number; smeny: number }>()
   for (const d of data) {
     const b = d.brigadnik as unknown as { id: string; jmeno: string; prijmeni: string } | null
     if (!b) continue
+    const hours = safeHours(d)
     const existing = perBrigadnik.get(b.id)
     if (existing) {
-      existing.hodin += Number(d.hodin_celkem ?? 0)
+      existing.hodin += hours
       existing.smeny += 1
     } else {
       perBrigadnik.set(b.id, {
         jmeno: b.jmeno,
         prijmeni: b.prijmeni,
-        hodin: Number(d.hodin_celkem ?? 0),
+        hodin: hours,
         smeny: 1,
       })
     }
