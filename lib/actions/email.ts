@@ -1,0 +1,271 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { createClient } from "@/lib/supabase/server"
+import { sendGmailMessage } from "@/lib/email/gmail-send"
+import { matchEmailToBrigadnik } from "@/lib/email/email-matcher"
+import { sendEmailSchema, updateConversationSchema, threadListSchema } from "@/lib/schemas/email"
+import type { SendEmailResult, ThreadListResult, ThreadDetailResult, ConversationStatus } from "@/types/email"
+
+// ============================================================
+// sendEmail — Send individual email to brigadník via Gmail API
+// ============================================================
+
+export async function sendEmailAction(input: unknown): Promise<SendEmailResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: "Nepřihlášen" }
+
+  // Validate input
+  const parsed = sendEmailSchema.safeParse(input)
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Neplatný vstup" }
+  }
+
+  const { brigadnik_id, subject, body_html, document_type } = parsed.data
+
+  // Get brigadník
+  const { data: brigadnik } = await supabase
+    .from("brigadnici")
+    .select("id, jmeno, prijmeni, email")
+    .eq("id", brigadnik_id)
+    .single()
+
+  if (!brigadnik) return { success: false, error: "Brigádník nenalezen" }
+  if (!brigadnik.email) return { success: false, error: "Brigádník nemá vyplněný email" }
+
+  // Get current user info for signature
+  const { data: currentUser } = await supabase
+    .from("users")
+    .select("id, jmeno, prijmeni, role")
+    .eq("auth_user_id", user.id)
+    .single()
+
+  if (!currentUser) return { success: false, error: "Uživatel nenalezen" }
+
+  // Append signature
+  const signature = `<br><br>--<br>${currentUser.jmeno} ${currentUser.prijmeni}<br>Crewmate`
+  const fullHtml = body_html + signature
+
+  try {
+    // Send via Gmail API
+    const { messageId, threadId } = await sendGmailMessage({
+      to: brigadnik.email,
+      subject,
+      bodyHtml: fullHtml,
+    })
+
+    // Upsert email_thread
+    const { data: existingThread } = await supabase
+      .from("email_threads")
+      .select("id")
+      .eq("gmail_thread_id", threadId)
+      .single()
+
+    let dbThreadId: string
+
+    if (existingThread) {
+      dbThreadId = existingThread.id
+      await supabase
+        .from("email_threads")
+        .update({
+          last_message_at: new Date().toISOString(),
+          last_message_preview: subject.slice(0, 100),
+          message_count: undefined, // will increment below
+          status: "ceka_na_brigadnika" as ConversationStatus,
+        })
+        .eq("id", dbThreadId)
+
+      // Increment message count manually
+      const { data: threadData } = await supabase
+        .from("email_threads")
+        .select("message_count")
+        .eq("id", dbThreadId)
+        .single()
+      if (threadData) {
+        await supabase
+          .from("email_threads")
+          .update({ message_count: threadData.message_count + 1 })
+          .eq("id", dbThreadId)
+      }
+    } else {
+      const { data: newThread, error: threadError } = await supabase
+        .from("email_threads")
+        .insert({
+          brigadnik_id,
+          gmail_thread_id: threadId,
+          subject,
+          status: "ceka_na_brigadnika" as ConversationStatus,
+          last_message_at: new Date().toISOString(),
+          last_message_preview: subject.slice(0, 100),
+          message_count: 1,
+        })
+        .select("id")
+        .single()
+
+      if (threadError || !newThread) {
+        console.error("Thread creation error:", threadError)
+        return { success: false, error: "Email odeslán, ale nepodařilo se uložit konverzaci" }
+      }
+      dbThreadId = newThread.id
+    }
+
+    // Insert email_message
+    const { data: msg } = await supabase
+      .from("email_messages")
+      .insert({
+        thread_id: dbThreadId,
+        gmail_message_id: messageId,
+        direction: "outbound",
+        from_email: process.env.GMAIL_USER_EMAIL ?? "team@crewmate.cz",
+        from_name: `${currentUser.jmeno} ${currentUser.prijmeni}`,
+        to_email: brigadnik.email,
+        subject,
+        body_html: fullHtml,
+        body_text: "", // could strip HTML but not critical
+        sent_at: new Date().toISOString(),
+        sent_by_user_id: currentUser.id,
+        document_type: document_type ?? null,
+      })
+      .select("id")
+      .single()
+
+    // Log to historie
+    await supabase.from("historie").insert({
+      brigadnik_id,
+      user_id: currentUser.id,
+      typ: "email_odeslan",
+      popis: `Email odeslán: ${subject}`,
+      metadata: {
+        thread_id: dbThreadId,
+        message_id: msg?.id,
+        to_email: brigadnik.email,
+        document_type,
+      },
+    })
+
+    revalidatePath("/app/emaily")
+    revalidatePath(`/app/brigadnici/${brigadnik_id}`)
+
+    return { success: true, thread_id: dbThreadId, message_id: msg?.id }
+  } catch (error) {
+    console.error("Gmail send error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Nepodařilo se odeslat email",
+    }
+  }
+}
+
+// ============================================================
+// getThreads — List email threads with optional status filter
+// ============================================================
+
+export async function getThreads(input?: unknown): Promise<ThreadListResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { threads: [], total: 0 }
+
+  const params = threadListSchema.parse(input ?? {})
+  const { status_filter, page, limit } = params
+  const offset = (page - 1) * limit
+
+  let query = supabase
+    .from("email_threads")
+    .select("*, brigadnik:brigadnici(id, jmeno, prijmeni, email)", { count: "exact" })
+    .order("last_message_at", { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  if (status_filter) {
+    query = query.eq("status", status_filter)
+  }
+
+  const { data, count, error } = await query
+
+  if (error) {
+    console.error("getThreads error:", error)
+    return { threads: [], total: 0 }
+  }
+
+  return {
+    threads: data ?? [],
+    total: count ?? 0,
+  }
+}
+
+// ============================================================
+// getThread — Get single thread with all messages
+// ============================================================
+
+export async function getThread(threadId: string): Promise<ThreadDetailResult | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const { data: thread } = await supabase
+    .from("email_threads")
+    .select("*, brigadnik:brigadnici(id, jmeno, prijmeni, email)")
+    .eq("id", threadId)
+    .single()
+
+  if (!thread) return null
+
+  const { data: messages } = await supabase
+    .from("email_messages")
+    .select("*, attachments:email_attachments(*), sent_by:users(id, jmeno, prijmeni)")
+    .eq("thread_id", threadId)
+    .order("sent_at", { ascending: true })
+
+  return {
+    thread,
+    messages: messages ?? [],
+  }
+}
+
+// ============================================================
+// updateConversationStatus — Change thread status manually
+// ============================================================
+
+export async function updateConversationStatus(input: unknown) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const parsed = updateConversationSchema.safeParse(input)
+  if (!parsed.success) return { error: "Neplatný vstup" }
+
+  const { thread_id, status } = parsed.data
+
+  // Get current status for audit
+  const { data: thread } = await supabase
+    .from("email_threads")
+    .select("status, brigadnik_id")
+    .eq("id", thread_id)
+    .single()
+
+  if (!thread) return { error: "Konverzace nenalezena" }
+
+  await supabase
+    .from("email_threads")
+    .update({ status })
+    .eq("id", thread_id)
+
+  // Get user ID
+  const { data: currentUser } = await supabase
+    .from("users")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single()
+
+  // Log to historie
+  await supabase.from("historie").insert({
+    brigadnik_id: thread.brigadnik_id,
+    user_id: currentUser?.id,
+    typ: "konverzace_zmena_stavu",
+    popis: `Stav konverzace změněn: ${thread.status} → ${status}`,
+    metadata: { thread_id, old_status: thread.status, new_status: status },
+  })
+
+  revalidatePath("/app/emaily")
+  return { success: true }
+}

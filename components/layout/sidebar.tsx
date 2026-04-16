@@ -11,6 +11,7 @@ import {
   Clock,
   FileText,
   Settings,
+  Mail,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NAV_SECTIONS } from "@/lib/constants"
@@ -25,6 +26,7 @@ const ICONS = {
   Clock,
   FileText,
   Settings,
+  Mail,
 } as const
 
 export function Sidebar() {

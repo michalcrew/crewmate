@@ -9,6 +9,7 @@ export const NAV_SECTIONS = [
       { label: "Dashboard", href: "/app", icon: "LayoutDashboard" },
       { label: "Zakázky", href: "/app/nabidky", icon: "Briefcase" },
       { label: "Brigádníci", href: "/app/brigadnici", icon: "Users" },
+      { label: "Emaily", href: "/app/emaily", icon: "Mail" },
       { label: "Akce", href: "/app/akce", icon: "Calendar" },
     ],
   },
