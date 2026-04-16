@@ -1,19 +1,17 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Plus } from "lucide-react"
+import { Plus, Users, CheckCircle2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent } from "@/components/ui/card"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { getBrigadnici } from "@/lib/actions/brigadnici"
 import { BrigadniciSearch } from "@/components/brigadnici/brigadnici-search"
 import { DPP_STATES } from "@/lib/constants"
+import { PageHeader } from "@/components/shared/page-header"
+import { StatusBadge } from "@/components/shared/status-badge"
+import { EmptyState } from "@/components/shared/empty-state"
 
 export const metadata: Metadata = {
   title: "Brigádníci",
@@ -28,91 +26,112 @@ export default async function BrigadniciPage({
   const brigadnici = await getBrigadnici({ search: params.q })
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Brigádníci</h1>
-        <Link href="/app/brigadnici/novy">
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Přidat brigádníka
-          </Button>
-        </Link>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title="Brigádníci"
+        description={`${brigadnici.length} brigádník${brigadnici.length === 1 ? "" : brigadnici.length < 5 ? "i" : "ů"}`}
+        actions={
+          <Link href="/app/brigadnici/novy">
+            <Button><Plus className="h-4 w-4 mr-1.5" />Přidat brigádníka</Button>
+          </Link>
+        }
+      />
 
       <BrigadniciSearch />
 
-      <div className="border rounded-lg overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Jméno</TableHead>
-              <TableHead>Telefon</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Akce</TableHead>
-              <TableHead>Údaje</TableHead>
-              <TableHead>DPP tento měsíc</TableHead>
-              <TableHead>DPP příští měsíc</TableHead>
-              <TableHead>Hodnocení</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {brigadnici.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                  {params.q
-                    ? `Žádní brigádníci pro "${params.q}"`
-                    : "Žádní brigádníci. Přidejte prvního brigádníka."}
-                </TableCell>
-              </TableRow>
-            ) : (
-              brigadnici.map((b) => {
-                const dppCurrentState = DPP_STATES[((b as { dpp_tento_mesic?: string }).dpp_tento_mesic ?? "zadny") as keyof typeof DPP_STATES]
-                const dppNextState = DPP_STATES[((b as { dpp_pristi_mesic?: string }).dpp_pristi_mesic ?? "zadny") as keyof typeof DPP_STATES]
-                return (
-                  <TableRow key={b.id}>
-                    <TableCell>
-                      <Link
-                        href={`/app/brigadnici/${b.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {b.prijmeni} {b.jmeno}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{b.telefon}</TableCell>
-                    <TableCell className="text-muted-foreground">{b.email}</TableCell>
-                    <TableCell className="text-center">
-                      {(b as { pocet_akci?: number }).pocet_akci ?? 0}
-                    </TableCell>
-                    <TableCell>
-                      {b.dotaznik_vyplnen
-                        ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-xs">Vyplněno</Badge>
-                        : <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-xs">Chybí</Badge>
-                      }
-                    </TableCell>
-                    <TableCell>
-                      <span className={dppCurrentState?.color ?? ""}>
-                        {dppCurrentState?.label ?? "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className={dppNextState?.color ?? ""}>
-                        {dppNextState?.label ?? "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {Number(b.prumerne_hodnoceni) > 0 ? `${b.prumerne_hodnoceni} / 5` : "—"}
-                    </TableCell>
+      <Card className="shadow-sm overflow-hidden">
+        <CardContent className="p-0">
+          {brigadnici.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title={params.q ? `Žádní brigádníci pro "${params.q}"` : "Žádní brigádníci"}
+              description={params.q ? "Zkuste jiný hledaný výraz." : "Přidejte prvního brigádníka a začněte nabírat."}
+              actionLabel={params.q ? undefined : "Přidat brigádníka"}
+              actionHref={params.q ? undefined : "/app/brigadnici/novy"}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Jméno</TableHead>
+                    <TableHead className="hidden sm:table-cell">Telefon</TableHead>
+                    <TableHead className="hidden md:table-cell">Email</TableHead>
+                    <TableHead className="text-center">Akce</TableHead>
+                    <TableHead>Stav</TableHead>
+                    <TableHead>DPP</TableHead>
+                    <TableHead className="text-center">Hodnocení</TableHead>
                   </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                </TableHeader>
+                <TableBody>
+                  {brigadnici.map((b) => {
+                    const dppCurrentState = DPP_STATES[((b as { dpp_tento_mesic?: string }).dpp_tento_mesic ?? "zadny") as keyof typeof DPP_STATES]
+                    const hasData = b.dotaznik_vyplnen
+                    const hasDpp = (b as { dpp_tento_mesic?: string }).dpp_tento_mesic === "podepsano"
+                    const needsAction = !hasData || !hasDpp
+                    const rating = Number(b.prumerne_hodnoceni)
 
-      <p className="text-sm text-muted-foreground mt-2">
-        {brigadnici.length} brigádník{brigadnici.length === 1 ? "" : brigadnici.length < 5 ? "i" : "ů"}
-      </p>
+                    return (
+                      <TableRow key={b.id} className={needsAction ? "bg-amber-50/50" : ""}>
+                        <TableCell>
+                          <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
+                            {b.prijmeni} {b.jmeno}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">{b.telefon}</TableCell>
+                        <TableCell className="hidden md:table-cell text-muted-foreground text-sm">{b.email}</TableCell>
+                        <TableCell className="text-center tabular-nums">
+                          {(b as { pocet_akci?: number }).pocet_akci ?? 0}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            {hasData ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            ) : (
+                              <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              {hasData ? "Kompletní" : "Chybí údaje"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge
+                            variant={
+                              dppCurrentState?.label === "Podepsáno" ? "success" :
+                              dppCurrentState?.label === "Odesláno" ? "warning" :
+                              dppCurrentState?.label === "Vygenerováno" ? "info" :
+                              "neutral"
+                            }
+                          >
+                            {dppCurrentState?.label ?? "—"}
+                          </StatusBadge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {rating > 0 ? (
+                            <div className="flex items-center justify-center gap-0.5">
+                              {[1, 2, 3, 4, 5].map(star => (
+                                <span
+                                  key={star}
+                                  className={`text-xs ${star <= Math.round(rating) ? "text-amber-400" : "text-gray-200"}`}
+                                >
+                                  ★
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -12,6 +12,7 @@ import { AddUserDialog } from "@/components/settings/add-user-dialog"
 import { UserActions } from "@/components/settings/user-actions"
 import { AddSablonaDialog } from "@/components/settings/edit-sablona-dialog"
 import { SablonaActions } from "@/components/settings/sablona-actions"
+import { PageHeader } from "@/components/shared/page-header"
 
 export const metadata: Metadata = { title: "Nastavení" }
 
@@ -34,7 +35,7 @@ export default async function NastaveniPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Nastavení</h1>
+      <PageHeader title="Nastavení" description="Správa uživatelů, šablon a konfigurace" />
 
       <Tabs defaultValue="uzivatele">
         <TabsList>

@@ -2,16 +2,33 @@ export const APP_NAME = "Crewmate"
 export const APP_DESCRIPTION = "Systém pro správu brigádníků a eventového personálu"
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
 
-export const NAV_ITEMS = [
-  { label: "Dashboard", href: "/app", icon: "LayoutDashboard" },
-  { label: "Zakázky", href: "/app/nabidky", icon: "Briefcase" },
-  { label: "Brigádníci", href: "/app/brigadnici", icon: "Users" },
-  { label: "Akce", href: "/app/akce", icon: "Calendar" },
-  { label: "Měsíční přehled", href: "/app/prehled-mesic", icon: "BarChart3" },
-  { label: "Moje hodiny", href: "/app/hodiny", icon: "Clock" },
-  { label: "Šablony", href: "/app/sablony", icon: "FileText" },
-  { label: "Nastavení", href: "/app/nastaveni", icon: "Settings" },
+export const NAV_SECTIONS = [
+  {
+    label: "Hlavní",
+    items: [
+      { label: "Dashboard", href: "/app", icon: "LayoutDashboard" },
+      { label: "Zakázky", href: "/app/nabidky", icon: "Briefcase" },
+      { label: "Brigádníci", href: "/app/brigadnici", icon: "Users" },
+      { label: "Akce", href: "/app/akce", icon: "Calendar" },
+    ],
+  },
+  {
+    label: "Reporting",
+    items: [
+      { label: "Měsíční přehled", href: "/app/prehled-mesic", icon: "BarChart3" },
+      { label: "Moje hodiny", href: "/app/hodiny", icon: "Clock" },
+    ],
+  },
+  {
+    label: "Správa",
+    items: [
+      { label: "Šablony", href: "/app/sablony", icon: "FileText" },
+      { label: "Nastavení", href: "/app/nastaveni", icon: "Settings" },
+    ],
+  },
 ] as const
+
+export const NAV_ITEMS = NAV_SECTIONS.flatMap(s => [...s.items])
 
 export const PIPELINE_STATES = {
   zajemce: { label: "Zájemce", color: "bg-blue-500/10 text-blue-500" },

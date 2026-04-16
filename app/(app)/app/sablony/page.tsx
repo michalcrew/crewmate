@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { createClient } from "@/lib/supabase/server"
 import { getDokumentSablony } from "@/lib/actions/dokument-sablony"
+import { PageHeader } from "@/components/shared/page-header"
 
 export const metadata: Metadata = { title: "Šablony" }
 
@@ -31,7 +32,7 @@ export default async function SablonyPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-6">Šablony</h1>
+      <PageHeader title="Šablony" description="Dokumentové a emailové šablony" />
 
       <Tabs defaultValue="dokumenty">
         <TabsList>

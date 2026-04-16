@@ -8,8 +8,9 @@ import {
 import { getMyHodiny, getHodinySouhrn, getAllHodiny, getRecruitmentMetrics } from "@/lib/actions/naborar-hodiny"
 import { getCurrentUserRole } from "@/lib/actions/users"
 import { ZapsatHodinyDialog } from "@/components/hodiny/zapsat-hodiny-dialog"
+import { PageHeader } from "@/components/shared/page-header"
 
-export const metadata: Metadata = { title: "Výkonnost náboru" }
+export const metadata: Metadata = { title: "Moje hodiny" }
 
 export default async function HodinyPage({
   searchParams,
@@ -34,10 +35,11 @@ export default async function HodinyPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{isAdmin ? "Výkonnost náboru" : "Odpracované hodiny"}</h1>
-        <ZapsatHodinyDialog />
-      </div>
+      <PageHeader
+        title="Moje hodiny"
+        description={mesicLabel}
+        actions={<ZapsatHodinyDialog />}
+      />
 
       {/* Month selector */}
       <div className="flex gap-2">

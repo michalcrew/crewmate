@@ -7,6 +7,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { createClient } from "@/lib/supabase/server"
+import { PageHeader } from "@/components/shared/page-header"
 
 export const metadata: Metadata = { title: "Měsíční přehled" }
 
@@ -83,21 +84,19 @@ export default async function PrehledMesicPage({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Měsíční přehled — {mesicLabel}</h1>
-        <div className="flex gap-2">
-          <Link href={`/api/export/dochazka?mesic=${mesic}`}>
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />Docházka (Excel)
-            </Button>
-          </Link>
-          <Link href={`/api/export/karty?mesic=${mesic}`}>
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />Karty zaměstnanců
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title={`Měsíční přehled — ${mesicLabel}`}
+        actions={
+          <div className="flex gap-2">
+            <Link href={`/api/export/dochazka?mesic=${mesic}`}>
+              <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-1.5" />Docházka</Button>
+            </Link>
+            <Link href={`/api/export/karty?mesic=${mesic}`}>
+              <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-1.5" />Karty</Button>
+            </Link>
+          </div>
+        }
+      />
 
       <div className="flex gap-2 mb-6">
         {[-2, -1, 0, 1].map((offset) => {
