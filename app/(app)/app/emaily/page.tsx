@@ -1,6 +1,8 @@
 import { getThreads } from "@/lib/actions/email"
 import { InboxLayout } from "@/components/email/inbox-layout"
+import { NewEmailDialog } from "@/components/email/new-email-dialog"
 import { PageHeader } from "@/components/shared/page-header"
+import { createClient } from "@/lib/supabase/server"
 
 export default async function EmailyPage({
   searchParams,
@@ -11,18 +13,22 @@ export default async function EmailyPage({
   const statusFilter = params.status as "nove" | "ceka_na_brigadnika" | "ceka_na_nas" | "vyreseno" | undefined
   const page = parseInt(params.page ?? "1", 10)
 
-  const { threads, total } = await getThreads({
-    status_filter: statusFilter,
-    page,
-    limit: 50,
-  })
+  const [{ threads, total }, brigadnici] = await Promise.all([
+    getThreads({ status_filter: statusFilter, page, limit: 50 }),
+    getBrigadniciForEmail(),
+  ])
 
   return (
     <div className="flex flex-col h-full">
-      <PageHeader
-        title="Emaily"
-        description="Emailová komunikace s brigádníky"
-      />
+      <div className="flex items-center justify-between">
+        <PageHeader
+          title="Emaily"
+          description="Emailová komunikace s brigádníky"
+        />
+        <div className="pr-4">
+          <NewEmailDialog brigadnici={brigadnici} />
+        </div>
+      </div>
       <InboxLayout
         threads={threads}
         total={total}
@@ -31,4 +37,15 @@ export default async function EmailyPage({
       />
     </div>
   )
+}
+
+async function getBrigadniciForEmail() {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("brigadnici")
+    .select("id, jmeno, prijmeni, email")
+    .eq("aktivni", true)
+    .not("email", "is", null)
+    .order("prijmeni")
+  return data ?? []
 }

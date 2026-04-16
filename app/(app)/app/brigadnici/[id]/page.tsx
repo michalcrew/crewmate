@@ -25,6 +25,9 @@ import { PIPELINE_STATES, DPP_STATES } from "@/lib/constants"
 import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button"
 import { GenerateDppButton, GenerateProhlaseniButton, SendDppButton, UploadPodpisForm } from "@/components/brigadnici/dpp-actions"
 import { EditBrigadnikDialog } from "@/components/brigadnici/edit-brigadnik-dialog"
+import { BrigadnikEmailTab } from "@/components/email/brigadnik-email-tab"
+import { getThreads } from "@/lib/actions/email"
+import { validateDPPFields, validateProhlaseniFields } from "@/lib/documents/dpp-data-validator"
 
 export const metadata: Metadata = {
   title: "Detail brigádníka",
@@ -39,12 +42,18 @@ export default async function BrigadnikDetailPage({
   const brigadnik = await getBrigadnikById(id)
   if (!brigadnik) notFound()
 
-  const [pipeline, smluvniStav, historie, zkusenosti] = await Promise.all([
+  const [pipeline, smluvniStav, historie, zkusenosti, emailData] = await Promise.all([
     getBrigadnikPipeline(id),
     getBrigadnikSmluvniStav(id),
     getBrigadnikHistorie(id),
     getBrigadnikZkusenosti(id),
+    getThreads({ status_filter: undefined, page: 1, limit: 50 }),
   ])
+
+  // Filter threads for this brigadník
+  const brigadnikThreads = emailData.threads.filter(t => t.brigadnik_id === id)
+  const dppValidation = validateDPPFields(brigadnik)
+  const prohlaseniValidation = validateProhlaseniFields(brigadnik)
 
   return (
     <div>
@@ -90,6 +99,7 @@ export default async function BrigadnikDetailPage({
           <TabsTrigger value="zkusenosti">Zkušenosti ({zkusenosti.length})</TabsTrigger>
           <TabsTrigger value="smluvni">Smluvní stav</TabsTrigger>
           <TabsTrigger value="historie">Historie</TabsTrigger>
+          <TabsTrigger value="komunikace">Komunikace ({brigadnikThreads.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="prehled" className="space-y-4 mt-4">
@@ -308,6 +318,22 @@ export default async function BrigadnikDetailPage({
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="komunikace" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle>Emailová komunikace</CardTitle></CardHeader>
+            <CardContent>
+              <BrigadnikEmailTab
+                brigadnikId={brigadnik.id}
+                brigadnikEmail={brigadnik.email}
+                brigadnikName={`${brigadnik.jmeno} ${brigadnik.prijmeni}`}
+                missingDppFields={dppValidation.missing}
+                missingProhlaseniFields={prohlaseniValidation.missing}
+                threads={brigadnikThreads}
+              />
             </CardContent>
           </Card>
         </TabsContent>
