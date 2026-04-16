@@ -41,10 +41,10 @@ export async function sendEmailAction(input: unknown): Promise<SendEmailResult> 
     .eq("auth_user_id", user.id)
     .single()
 
-  if (!currentUser) return { success: false, error: "Uživatel nenalezen" }
-
-  // Append signature
-  const signature = `<br><br>--<br>${currentUser.jmeno} ${currentUser.prijmeni}<br>Crewmate`
+  // Append signature (graceful fallback if user record not found)
+  const signature = currentUser
+    ? `<br><br>--<br>${currentUser.jmeno} ${currentUser.prijmeni}<br>Crewmate`
+    : `<br><br>--<br>Crewmate`
   const fullHtml = body_html + signature
 
   try {
@@ -118,13 +118,13 @@ export async function sendEmailAction(input: unknown): Promise<SendEmailResult> 
         gmail_message_id: messageId,
         direction: "outbound",
         from_email: process.env.GMAIL_USER_EMAIL ?? "team@crewmate.cz",
-        from_name: `${currentUser.jmeno} ${currentUser.prijmeni}`,
+        from_name: currentUser ? `${currentUser.jmeno} ${currentUser.prijmeni}` : null,
         to_email: brigadnik.email,
         subject,
         body_html: fullHtml,
         body_text: "", // could strip HTML but not critical
         sent_at: new Date().toISOString(),
-        sent_by_user_id: currentUser.id,
+        sent_by_user_id: currentUser?.id ?? null,
         document_type: document_type ?? null,
       })
       .select("id")
@@ -133,7 +133,7 @@ export async function sendEmailAction(input: unknown): Promise<SendEmailResult> 
     // Log to historie
     await supabase.from("historie").insert({
       brigadnik_id,
-      user_id: currentUser.id,
+      user_id: currentUser?.id ?? null,
       typ: "email_odeslan",
       popis: `Email odeslán: ${subject}`,
       metadata: {
