@@ -169,6 +169,77 @@ export async function updateBrigadnik(id: string, formData: FormData) {
   return { success: true }
 }
 
+export async function createBrigadnikAndAddToPipeline(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const raw = Object.fromEntries(formData.entries())
+  const parsed = brigadnikSchema.safeParse(raw)
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
+
+  const nabidkaId = raw.nabidka_id as string
+  if (!nabidkaId) return { error: "Chybí ID nabídky" }
+
+  // Check for duplicate email
+  const { data: existing } = await supabase
+    .from("brigadnici")
+    .select("id")
+    .eq("email", parsed.data.email)
+    .limit(1)
+
+  let brigadnikId: string
+
+  if (existing && existing.length > 0 && existing[0]) {
+    brigadnikId = existing[0].id
+  } else {
+    const { data: newB, error: insertError } = await supabase
+      .from("brigadnici")
+      .insert({
+        jmeno: parsed.data.jmeno,
+        prijmeni: parsed.data.prijmeni,
+        email: parsed.data.email,
+        telefon: parsed.data.telefon,
+        zdroj: "rucne",
+      })
+      .select("id")
+      .single()
+
+    if (insertError || !newB) return { error: "Nepodařilo se vytvořit brigádníka" }
+    brigadnikId = newB.id
+  }
+
+  // Add to pipeline
+  const { error: pipelineError } = await supabase
+    .from("pipeline_entries")
+    .insert({
+      brigadnik_id: brigadnikId,
+      nabidka_id: nabidkaId,
+      stav: "kontaktovan",
+    })
+
+  if (pipelineError) {
+    if (pipelineError.code === "23505") return { error: "Brigádník je již v pipeline této nabídky" }
+    return { error: pipelineError.message }
+  }
+
+  // Get internal user for audit
+  const { data: internalUser } = await supabase
+    .from("users").select("id").eq("auth_user_id", user.id).single()
+
+  await supabase.from("historie").insert({
+    brigadnik_id: brigadnikId,
+    nabidka_id: nabidkaId,
+    user_id: internalUser?.id,
+    typ: "pipeline_zmena",
+    popis: `Ručně přidán: ${parsed.data.jmeno} ${parsed.data.prijmeni} (telefon)`,
+  })
+
+  revalidatePath(`/app/nabidky/${nabidkaId}`)
+  revalidatePath("/app/brigadnici")
+  return { success: true, id: brigadnikId }
+}
+
 export async function getBrigadnikById(id: string) {
   const supabase = await createClient()
   const { data, error } = await supabase
