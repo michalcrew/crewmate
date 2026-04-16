@@ -210,11 +210,15 @@ export async function getThread(threadId: string): Promise<ThreadDetailResult | 
 
   if (!thread) return null
 
-  const { data: messages } = await supabase
+  const { data: messages, error: msgError } = await supabase
     .from("email_messages")
-    .select("*, attachments:email_attachments(*), sent_by:users(id, jmeno, prijmeni)")
+    .select("*, attachments:email_attachments(*)")
     .eq("thread_id", threadId)
     .order("sent_at", { ascending: true })
+
+  if (msgError) {
+    console.error("getThread messages error:", msgError)
+  }
 
   return {
     thread,
