@@ -26,10 +26,17 @@ export default async function NabidkaDetailPage({
   const nabidka = await getNabidkaById(id)
   if (!nabidka) notFound()
 
-  const [pipeline, allBrigadnici] = await Promise.all([
-    getPipelineByNabidka(id),
-    getBrigadnici(),
-  ])
+  let pipeline: Awaited<ReturnType<typeof getPipelineByNabidka>> = []
+  let allBrigadnici: Awaited<ReturnType<typeof getBrigadnici>> = []
+
+  try {
+    ;[pipeline, allBrigadnici] = await Promise.all([
+      getPipelineByNabidka(id),
+      getBrigadnici(),
+    ])
+  } catch {
+    // Graceful fallback if pipeline/brigadnici queries fail
+  }
   const pipelineIds = new Set(pipeline.map(p => (p.brigadnik as unknown as { id: string })?.id))
   const availableBrigadnici = (allBrigadnici ?? [])
     .filter(b => !pipelineIds.has(b.id))

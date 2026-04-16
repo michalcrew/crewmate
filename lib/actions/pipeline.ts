@@ -5,14 +5,35 @@ import { createClient } from "@/lib/supabase/server"
 
 export async function getPipelineByNabidka(nabidkaId: string) {
   const supabase = await createClient()
+
+  // Query without FK hint for naborar (FK name may differ between environments)
   const { data, error } = await supabase
     .from("pipeline_entries")
-    .select("*, brigadnik:brigadnici(id, jmeno, prijmeni, email, telefon, dotaznik_vyplnen), naborar:users!pipeline_entries_naborar_id_fkey(jmeno, prijmeni)")
+    .select("*, brigadnik:brigadnici(id, jmeno, prijmeni, email, telefon, dotaznik_vyplnen)")
     .eq("nabidka_id", nabidkaId)
     .order("updated_at", { ascending: false })
 
   if (error) throw error
-  return data
+
+  // Enrich with naborar names separately
+  const naborarIds = [...new Set((data ?? []).map(d => d.naborar_id).filter(Boolean))] as string[]
+  const naborarMap = new Map<string, { jmeno: string; prijmeni: string }>()
+
+  if (naborarIds.length > 0) {
+    const { data: naborari } = await supabase
+      .from("users")
+      .select("id, jmeno, prijmeni")
+      .in("id", naborarIds)
+
+    for (const n of naborari ?? []) {
+      naborarMap.set(n.id, { jmeno: n.jmeno, prijmeni: n.prijmeni })
+    }
+  }
+
+  return (data ?? []).map(d => ({
+    ...d,
+    naborar: d.naborar_id ? naborarMap.get(d.naborar_id) ?? null : null,
+  }))
 }
 
 export async function updatePipelineStav(

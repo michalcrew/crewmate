@@ -38,61 +38,70 @@ export async function getBrigadnici(filter?: {
   const { data, error } = await query
   if (error) throw error
 
-  // Enrich with action count and monthly DPP data
-  const brigadnikIds = (data ?? []).map(b => b.id)
+  // Enrich with action count and monthly DPP data (graceful — never crashes if enrichment fails)
+  try {
+    const brigadnikIds = (data ?? []).map(b => b.id)
 
-  if (brigadnikIds.length === 0) return data ?? []
+    if (brigadnikIds.length === 0) return data ?? []
 
-  // Get action counts
-  const { data: prirazeniData } = await supabase
-    .from("prirazeni")
-    .select("brigadnik_id")
-    .in("brigadnik_id", brigadnikIds)
-    .eq("status", "prirazeny")
+    // Get action counts
+    const { data: prirazeniData } = await supabase
+      .from("prirazeni")
+      .select("brigadnik_id")
+      .in("brigadnik_id", brigadnikIds)
+      .eq("status", "prirazeny")
 
-  const actionCounts = new Map<string, number>()
-  for (const p of prirazeniData ?? []) {
-    actionCounts.set(p.brigadnik_id, (actionCounts.get(p.brigadnik_id) ?? 0) + 1)
+    const actionCounts = new Map<string, number>()
+    for (const p of prirazeniData ?? []) {
+      actionCounts.set(p.brigadnik_id, (actionCounts.get(p.brigadnik_id) ?? 0) + 1)
+    }
+
+    // Get DPP status for current and next month
+    const now = new Date()
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextMonthStr = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`
+
+    const { data: smluvniData } = await supabase
+      .from("smluvni_stav")
+      .select("brigadnik_id, mesic, dpp_stav")
+      .in("brigadnik_id", brigadnikIds)
+      .in("mesic", [currentMonth, nextMonthStr])
+
+    const dppMap = new Map<string, { current: string; next: string }>()
+    for (const s of smluvniData ?? []) {
+      const existing = dppMap.get(s.brigadnik_id) ?? { current: "zadny", next: "zadny" }
+      if (s.mesic === currentMonth) existing.current = s.dpp_stav
+      if (s.mesic === nextMonthStr) existing.next = s.dpp_stav
+      dppMap.set(s.brigadnik_id, existing)
+    }
+
+    // Merge data and sort: most actions first, then by rating
+    const enriched = (data ?? []).map(b => ({
+      ...b,
+      pocet_akci: actionCounts.get(b.id) ?? 0,
+      dpp_tento_mesic: dppMap.get(b.id)?.current ?? "zadny",
+      dpp_pristi_mesic: dppMap.get(b.id)?.next ?? "zadny",
+    }))
+
+    enriched.sort((a, b) => {
+      if (b.pocet_akci !== a.pocet_akci) return b.pocet_akci - a.pocet_akci
+      const ratingA = Number(a.prumerne_hodnoceni) || 0
+      const ratingB = Number(b.prumerne_hodnoceni) || 0
+      if (ratingB !== ratingA) return ratingB - ratingA
+      return (a.prijmeni ?? "").localeCompare(b.prijmeni ?? "")
+    })
+
+    return enriched
+  } catch {
+    // Fallback: return basic data without enrichment
+    return (data ?? []).map(b => ({
+      ...b,
+      pocet_akci: 0,
+      dpp_tento_mesic: "zadny",
+      dpp_pristi_mesic: "zadny",
+    }))
   }
-
-  // Get DPP status for current and next month
-  const now = new Date()
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
-  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  const nextMonthStr = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`
-
-  const { data: smluvniData } = await supabase
-    .from("smluvni_stav")
-    .select("brigadnik_id, mesic, dpp_stav")
-    .in("brigadnik_id", brigadnikIds)
-    .in("mesic", [currentMonth, nextMonthStr])
-
-  const dppMap = new Map<string, { current: string; next: string }>()
-  for (const s of smluvniData ?? []) {
-    const existing = dppMap.get(s.brigadnik_id) ?? { current: "zadny", next: "zadny" }
-    if (s.mesic === currentMonth) existing.current = s.dpp_stav
-    if (s.mesic === nextMonthStr) existing.next = s.dpp_stav
-    dppMap.set(s.brigadnik_id, existing)
-  }
-
-  // Merge data and sort: most actions first, then by rating
-  const enriched = (data ?? []).map(b => ({
-    ...b,
-    pocet_akci: actionCounts.get(b.id) ?? 0,
-    dpp_tento_mesic: dppMap.get(b.id)?.current ?? "zadny",
-    dpp_pristi_mesic: dppMap.get(b.id)?.next ?? "zadny",
-  }))
-
-  enriched.sort((a, b) => {
-    // Sort by action count DESC, then rating DESC, then name ASC
-    if (b.pocet_akci !== a.pocet_akci) return b.pocet_akci - a.pocet_akci
-    const ratingA = Number(a.prumerne_hodnoceni) || 0
-    const ratingB = Number(b.prumerne_hodnoceni) || 0
-    if (ratingB !== ratingA) return ratingB - ratingA
-    return (a.prijmeni ?? "").localeCompare(b.prijmeni ?? "")
-  })
-
-  return enriched
 }
 
 export async function createBrigadnik(formData: FormData) {
