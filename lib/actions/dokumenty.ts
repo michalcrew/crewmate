@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { decrypt } from "@/lib/utils/crypto"
 import { escapeHtml, isAllowedFileType, MAX_FILE_SIZE } from "@/lib/utils/sanitize"
-import { sendEmail } from "@/lib/email/resend"
+import { sendGmailMessage } from "@/lib/email/gmail-send"
 import { getOrCreateSmluvniStav, updateDppStav } from "./smluvni-stav"
 
 export async function generateDpp(brigadnikId: string, mesic: string) {
@@ -299,17 +299,18 @@ export async function sendDppEmail(brigadnikId: string, mesic: string) {
   `
 
   try {
-    await sendEmail({
+    await sendGmailMessage({
       to: brigadnik.email,
       subject,
-      html,
+      bodyHtml: html,
       attachments: [{
         filename: pdfFilename,
         content: pdfBuffer,
-        contentType: "application/pdf",
+        mimeType: "application/pdf",
       }],
     })
-  } catch {
+  } catch (err) {
+    console.error("DPP email error:", err)
     return { error: "Nepodařilo se odeslat email" }
   }
 

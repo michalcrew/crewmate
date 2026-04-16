@@ -1,7 +1,7 @@
 "use server"
 
 import { z } from "zod"
-import { sendEmail } from "@/lib/email/resend"
+import { sendGmailMessage } from "@/lib/email/gmail-send"
 import { escapeHtml } from "@/lib/utils/sanitize"
 
 const kontaktSchema = z.object({
@@ -30,10 +30,10 @@ export async function submitKontakt(formData: FormData) {
   }
 
   try {
-    await sendEmail({
+    await sendGmailMessage({
       to: "team@crewmate.cz",
       subject: `Poptávka z webu — ${safe.jmeno}${safe.firma ? ` (${safe.firma})` : ""}`,
-      html: `
+      bodyHtml: `
         <h2>Nová poptávka z webu</h2>
         <table>
           <tr><td><strong>Jméno:</strong></td><td>${safe.jmeno}</td></tr>
@@ -45,9 +45,8 @@ export async function submitKontakt(formData: FormData) {
         <p>${safe.zprava.replace(/\n/g, "<br/>")}</p>
       `,
     })
-  } catch {
-    // Email might fail if Resend domain not verified — still return success
-    // In production, we'd want to save the inquiry to DB as fallback
+  } catch (err) {
+    console.error("Contact form email error:", err)
   }
 
   return { success: true }

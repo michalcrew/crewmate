@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { sendEmail } from "@/lib/email/resend"
+import { sendGmailMessage } from "@/lib/email/gmail-send"
 import { encrypt } from "@/lib/utils/crypto"
 import { z } from "zod"
 
@@ -186,8 +186,9 @@ export async function sendDotaznikEmail(brigadnikId: string) {
     .replaceAll("{{odkaz_formular}}", link)
 
   try {
-    await sendEmail({ to: brigadnik.email, subject, html })
-  } catch {
+    await sendGmailMessage({ to: brigadnik.email, subject, bodyHtml: html })
+  } catch (err) {
+    console.error("Dotazník email error:", err)
     return { error: "Nepodařilo se odeslat email" }
   }
 
