@@ -9,17 +9,22 @@ import { z } from "zod"
 
 const dotaznikSchema = z.object({
   token: z.string(),
-  jmeno: z.string().min(1),
-  prijmeni: z.string().min(1),
+  jmeno: z.string().min(1, "Jméno je povinné"),
+  prijmeni: z.string().min(1, "Příjmení je povinné"),
+  telefon: z.string().optional(),
   rodne_cislo: z.string().min(1, "Rodné číslo je povinné"),
   rodne_jmeno: z.string().optional(),
   rodne_prijmeni: z.string().optional(),
   datum_narozeni: z.string().min(1, "Datum narození je povinné"),
   misto_narozeni: z.string().min(1, "Místo narození je povinné"),
-  adresa: z.string().min(1, "Adresa je povinná"),
+  ulice_cp: z.string().min(1, "Ulice a číslo popisné je povinné"),
+  psc: z.string().min(1, "PSČ je povinné"),
+  mesto_bydliste: z.string().min(1, "Město je povinné"),
+  zeme: z.string().min(1, "Země je povinná"),
   korespondencni_adresa: z.string().optional(),
   cislo_op: z.string().min(1, "Číslo OP je povinné"),
   zdravotni_pojistovna: z.string().min(1, "Zdravotní pojišťovna je povinná"),
+  zdravotni_pojistovna_jina: z.string().optional(),
   cislo_uctu: z.string().min(1, "Číslo účtu je povinné"),
   kod_banky: z.string().min(1, "Kód banky je povinný"),
   vzdelani: z.string().min(1, "Vzdělání je povinné"),
@@ -71,21 +76,34 @@ export async function submitDotaznik(formData: FormData) {
   const encryptedRC = encrypt(parsed.data.rodne_cislo)
   const encryptedOP = encrypt(parsed.data.cislo_op)
 
+  // Resolve ZP: if "jina" selected, use the custom value
+  const zpValue = parsed.data.zdravotni_pojistovna === "jina"
+    ? (parsed.data.zdravotni_pojistovna_jina || "jina")
+    : parsed.data.zdravotni_pojistovna
+
+  // Compose full address from parts (backwards-compatible with 'adresa' field)
+  const fullAdresa = `${parsed.data.ulice_cp}, ${parsed.data.psc} ${parsed.data.mesto_bydliste}, ${parsed.data.zeme}`
+
   // Update brigadnik with personal data
   const { error: updateError } = await supabase
     .from("brigadnici")
     .update({
       jmeno: parsed.data.jmeno,
       prijmeni: parsed.data.prijmeni,
+      telefon: parsed.data.telefon || undefined,
       rodne_cislo: encryptedRC,
       rodne_jmeno: parsed.data.rodne_jmeno || null,
       rodne_prijmeni: parsed.data.rodne_prijmeni || null,
       datum_narozeni: parsed.data.datum_narozeni,
       misto_narozeni: parsed.data.misto_narozeni,
-      adresa: parsed.data.adresa,
+      adresa: fullAdresa,
+      ulice_cp: parsed.data.ulice_cp,
+      psc: parsed.data.psc,
+      mesto_bydliste: parsed.data.mesto_bydliste,
+      zeme: parsed.data.zeme,
       korespondencni_adresa: parsed.data.korespondencni_adresa || null,
       cislo_op: encryptedOP,
-      zdravotni_pojistovna: parsed.data.zdravotni_pojistovna,
+      zdravotni_pojistovna: zpValue,
       cislo_uctu: parsed.data.cislo_uctu,
       kod_banky: parsed.data.kod_banky,
       vzdelani: parsed.data.vzdelani,

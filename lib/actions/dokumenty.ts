@@ -38,16 +38,25 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
   const mesicLabel = new Date(`${mesic}-01`).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })
 
   // Escape all user data for HTML
+  const fullAdresa = brigadnik.adresa
+    ?? [brigadnik.ulice_cp, brigadnik.psc, brigadnik.mesto_bydliste, brigadnik.zeme].filter(Boolean).join(", ")
+
   const safe = {
     jmeno: escapeHtml(brigadnik.jmeno),
     prijmeni: escapeHtml(brigadnik.prijmeni),
     rodne_cislo: escapeHtml(rodne_cislo),
     cislo_op: escapeHtml(cislo_op),
     datum_narozeni: escapeHtml(brigadnik.datum_narozeni ?? ""),
-    adresa: escapeHtml(brigadnik.adresa ?? ""),
+    adresa: escapeHtml(fullAdresa),
+    ulice_cp: escapeHtml(brigadnik.ulice_cp ?? ""),
+    psc: escapeHtml(brigadnik.psc ?? ""),
+    mesto_bydliste: escapeHtml(brigadnik.mesto_bydliste ?? ""),
+    zeme: escapeHtml(brigadnik.zeme ?? ""),
+    misto_narozeni: escapeHtml(brigadnik.misto_narozeni ?? ""),
     zdravotni_pojistovna: escapeHtml(brigadnik.zdravotni_pojistovna ?? ""),
     cislo_uctu: escapeHtml(brigadnik.cislo_uctu ?? ""),
     kod_banky: escapeHtml(brigadnik.kod_banky ?? ""),
+    vzdelani: escapeHtml(brigadnik.vzdelani ?? ""),
     uplatnuje_slevu_text: brigadnik.uplatnuje_slevu_jinde ? "SOUČASNĚ" : "NESOUČASNĚ",
   }
 
@@ -99,10 +108,16 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     .replaceAll("{{rodne_cislo}}", safe.rodne_cislo)
     .replaceAll("{{datum_narozeni}}", safe.datum_narozeni)
     .replaceAll("{{adresa}}", safe.adresa)
+    .replaceAll("{{ulice_cp}}", safe.ulice_cp)
+    .replaceAll("{{psc}}", safe.psc)
+    .replaceAll("{{mesto_bydliste}}", safe.mesto_bydliste)
+    .replaceAll("{{zeme}}", safe.zeme)
+    .replaceAll("{{misto_narozeni}}", safe.misto_narozeni)
     .replaceAll("{{cislo_op}}", safe.cislo_op)
     .replaceAll("{{zdravotni_pojistovna}}", safe.zdravotni_pojistovna)
     .replaceAll("{{cislo_uctu}}", safe.cislo_uctu)
     .replaceAll("{{kod_banky}}", safe.kod_banky)
+    .replaceAll("{{vzdelani}}", safe.vzdelani)
     .replaceAll("{{mesic}}", escapeHtml(mesicLabel))
     .replaceAll("{{uplatnuje_slevu_text}}", safe.uplatnuje_slevu_text)
 

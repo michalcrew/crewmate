@@ -34,21 +34,33 @@ export const DPP_STATES = {
 } as const
 
 export const ZDRAVOTNI_POJISTOVNY = [
-  { kod: "111", nazev: "VZP ČR" },
-  { kod: "201", nazev: "VoZP" },
-  { kod: "205", nazev: "ČPZP" },
-  { kod: "207", nazev: "OZP" },
-  { kod: "209", nazev: "ZPŠ" },
-  { kod: "211", nazev: "ZPMV" },
-  { kod: "213", nazev: "RBP" },
+  { kod: "111", nazev: "VZP — Všeobecná zdravotní pojišťovna" },
+  { kod: "201", nazev: "VOZP — Vojenská zdravotní pojišťovna ČR" },
+  { kod: "205", nazev: "ČPZP — Česká průmyslová zdravotní pojišťovna" },
+  { kod: "207", nazev: "OZP — Oborová zdravotní pojišťovna" },
+  { kod: "209", nazev: "ZP Škoda — Zaměstnanecká pojišťovna Škoda" },
+  { kod: "211", nazev: "ZPMV — ZP ministerstva vnitra ČR" },
+  { kod: "213", nazev: "RBP — Revírní bratrská pokladna" },
+  { kod: "jina", nazev: "Jiná (vyplňte níže)" },
 ] as const
 
 export const VZDELANI_OPTIONS = [
-  { value: "zakladni", label: "Základní" },
-  { value: "stredni_bez", label: "Střední bez maturity" },
-  { value: "stredni_s", label: "Střední s maturitou" },
-  { value: "vyssi_odborne", label: "Vyšší odborné" },
-  { value: "vysokoskolske", label: "Vysokoškolské" },
+  { value: "A", label: "A — Bez vzdělání" },
+  { value: "B", label: "B — Neúplné základní vzdělání" },
+  { value: "C", label: "C — Základní vzdělání" },
+  { value: "D", label: "D — Nižší střední vzdělání" },
+  { value: "E", label: "E — Nižší střední odborné vzdělání" },
+  { value: "H", label: "H — Střední odborné s výučním listem" },
+  { value: "J", label: "J — Střední bez maturity i výučního listu" },
+  { value: "K", label: "K — Úplné střední všeobecné (gymnázium)" },
+  { value: "L", label: "L — Úplné střední odborné s vyučením i maturitou" },
+  { value: "M", label: "M — Úplné střední odborné s maturitou (bez vyučení)" },
+  { value: "N", label: "N — Vyšší odborné vzdělání" },
+  { value: "P", label: "P — Vyšší odborné v konzervatoři" },
+  { value: "R", label: "R — Bakalářské vzdělání" },
+  { value: "T", label: "T — Magisterské vzdělání" },
+  { value: "V", label: "V — Doktorské vzdělání" },
+  { value: "nevim", label: "Nevím" },
 ] as const
 
 export const TYP_POZICE_OPTIONS = [
