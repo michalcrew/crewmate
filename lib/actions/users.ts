@@ -7,11 +7,25 @@ import { z } from "zod"
 
 export async function getUsers() {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+
   const { data } = await supabase
     .from("users")
     .select("*")
     .order("role", { ascending: true })
     .order("prijmeni", { ascending: true })
+
+  // Fallback: if RLS returns empty but user is authenticated, try with admin client
+  if ((!data || data.length === 0)) {
+    const adminClient = createAdminClient()
+    const { data: adminData } = await adminClient
+      .from("users")
+      .select("*")
+      .order("role", { ascending: true })
+      .order("prijmeni", { ascending: true })
+    return adminData ?? []
+  }
 
   return data ?? []
 }

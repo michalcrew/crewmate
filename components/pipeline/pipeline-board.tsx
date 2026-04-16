@@ -203,6 +203,7 @@ function PipelineCardContent({ entry, isDragging, nabidkaId }: { entry: Pipeline
             href={`/app/brigadnici/${b.id}`}
             className="font-medium text-sm hover:underline"
             onClick={(e) => isDragging && e.preventDefault()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             {b.prijmeni} {b.jmeno}
           </Link>
