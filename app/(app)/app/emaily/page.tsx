@@ -1,6 +1,7 @@
 import { getThreads } from "@/lib/actions/email"
 import { InboxLayout } from "@/components/email/inbox-layout"
 import { NewEmailDialog } from "@/components/email/new-email-dialog"
+import { SyncGmailButton } from "@/components/email/sync-gmail-button"
 import { PageHeader } from "@/components/shared/page-header"
 import { createClient } from "@/lib/supabase/server"
 
@@ -25,7 +26,8 @@ export default async function EmailyPage({
           title="Emaily"
           description="Emailová komunikace s brigádníky"
         />
-        <div className="pr-4">
+        <div className="pr-4 flex gap-2">
+          <SyncGmailButton />
           <NewEmailDialog brigadnici={brigadnici} />
         </div>
       </div>
