@@ -377,11 +377,9 @@ function AssignmentMatrix({
 
       {akce.length === 0 ? (
         <div className="border border-dashed rounded-xl p-8 text-center text-sm text-muted-foreground">
-          {nabidkaTyp === "jednodenni"
-            ? "Jednodenní zakázka nemá akci."
-            : nabidkaTyp === "ukoncena"
-              ? "Ukončená zakázka — read-only."
-              : "Zatím žádná akce. Přidejte první akci tlačítkem nad stránkou."}
+          {nabidkaTyp === "ukoncena"
+            ? "Ukončená zakázka — read-only."
+            : "Zatím žádná akce. Přidejte první akci tlačítkem nad stránkou."}
         </div>
       ) : (
         <div className="rounded-xl border overflow-x-auto bg-card">

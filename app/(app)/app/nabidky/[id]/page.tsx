@@ -166,7 +166,8 @@ export default async function NabidkaDetailPage({
       {!isUkoncena && (
         <div className="flex flex-wrap items-center gap-2 mb-5">
           <AddToPipelineDialog nabidkaId={id} brigadnici={availableBrigadnici} />
-          {isOpakovana && (
+          {/* Opakovaná: libovolný počet akcí. Jednodenní: max 1 akce (server guard vynutí). */}
+          {(isOpakovana || (nabidka.typ === "jednodenni" && akce.length === 0)) && (
             <AddAkceDialog
               nabidkaId={id}
               defaultNazev={nabidka.nazev}
