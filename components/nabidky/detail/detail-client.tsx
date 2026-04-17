@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useMemo, useState, useTransition, useOptimistic } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import {
@@ -12,14 +12,14 @@ import {
   useSensors,
   useDraggable,
   useDroppable,
-  pointerWithin,
+  closestCenter,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Calendar, MapPin, Users, Copy, Send, Trash2, X, ClipboardList } from "lucide-react"
+import { Calendar, MapPin, Copy, Send, ClipboardList, Loader2 } from "lucide-react"
 import { PIPELINE_STATES } from "@/lib/constants"
 import { updatePipelineStav } from "@/lib/actions/pipeline"
 import { assignBrigadnikToAkce, unassignBrigadnikFromAkce, odeslatBriefing } from "@/lib/actions/akce"
@@ -38,7 +38,6 @@ export type PipelineEntry = {
     dotaznik_vyplnen: boolean
   } | null
   naborar: { jmeno: string; prijmeni: string } | null
-  // F-0012 enrichment
   dpp_stav?: string | null
   prohlaseni_stav?: string | null
   hodiny_ytd?: number
@@ -64,6 +63,8 @@ export type AkceWithPrirazeni = {
   }>
 }
 
+const ELIGIBLE_STAVS = ["prijaty_nehotova_admin", "prijaty_vse_vyreseno"]
+
 // ========== Main component ==========
 
 export function NabidkaDetailClient({
@@ -77,6 +78,30 @@ export function NabidkaDetailClient({
   nabidkaTyp: string
   pipeline: PipelineEntry[]
   akce: AkceWithPrirazeni[]
+  readOnly: boolean
+}) {
+  return (
+    <div className="space-y-8">
+      <PipelineSection pipeline={pipeline} nabidkaId={nabidkaId} readOnly={readOnly} />
+      <AssignmentMatrix
+        pipeline={pipeline}
+        akce={akce}
+        readOnly={readOnly}
+        nabidkaTyp={nabidkaTyp}
+      />
+    </div>
+  )
+}
+
+// ========== Pipeline section (kanban, DnD between columns only) ==========
+
+function PipelineSection({
+  pipeline,
+  nabidkaId,
+  readOnly,
+}: {
+  pipeline: PipelineEntry[]
+  nabidkaId: string
   readOnly: boolean
 }) {
   const [activeEntry, setActiveEntry] = useState<PipelineEntry | null>(null)
@@ -98,8 +123,7 @@ export function NabidkaDetailClient({
   function handleDragStart(event: DragStartEvent) {
     if (readOnly) return
     const id = String(event.active.id)
-    if (!id.startsWith("brig:")) return
-    const entryId = id.slice(5)
+    const entryId = id.startsWith("brig:") ? id.slice(5) : id
     const entry = pipeline.find(e => e.id === entryId)
     setActiveEntry(entry ?? null)
   }
@@ -112,102 +136,50 @@ export function NabidkaDetailClient({
 
     const activeId = String(active.id)
     const overId = String(over.id)
-    if (!activeId.startsWith("brig:")) return
+    const entryId = activeId.startsWith("brig:") ? activeId.slice(5) : activeId
+    const newStav = overId.startsWith("col:") ? overId.slice(4) : overId
 
-    const entryId = activeId.slice(5)
     const entry = pipeline.find(e => e.id === entryId)
-    if (!entry || !entry.brigadnik) return
+    if (!entry) return
+    if (entry.stav === newStav) return
 
-    // Target: pipeline column
-    if (overId.startsWith("col:")) {
-      const newStav = overId.slice(4)
-      if (entry.stav === newStav) return
-      const stavLabel = PIPELINE_STATES[newStav as keyof typeof PIPELINE_STATES]?.label ?? newStav
-      startTransition(async () => {
-        const result = await updatePipelineStav(entry.id, newStav, nabidkaId)
-        if (result.error) toast.error(result.error)
-        else toast.success(`Stav změněn na: ${stavLabel}`)
-      })
-      return
-    }
-
-    // Target: akce card
-    if (overId.startsWith("akce:")) {
-      const akceId = overId.slice(5)
-      const targetAkce = akce.find(a => a.id === akceId)
-      if (!targetAkce) return
-      // Guard client-side (server also guards)
-      if (!["prijaty_nehotova_admin", "prijaty_vse_vyreseno"].includes(entry.stav)) {
-        toast.error("Brigádník musí být ve stavu 'Přijatý' pro přiřazení na akci")
-        return
-      }
-      startTransition(async () => {
-        const result = await assignBrigadnikToAkce(akceId, entry.brigadnik!.id)
-        if (result.error) toast.error(result.error)
-        else toast.success(`${entry.brigadnik!.prijmeni} ${entry.brigadnik!.jmeno} přiřazen/a na ${targetAkce.nazev}`)
-      })
-    }
+    const stavLabel = PIPELINE_STATES[newStav as keyof typeof PIPELINE_STATES]?.label ?? newStav
+    startTransition(async () => {
+      const result = await updatePipelineStav(entry.id, newStav, nabidkaId)
+      if (result.error) toast.error(result.error)
+      else toast.success(`Stav změněn na: ${stavLabel}`)
+    })
   }
 
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={pointerWithin}
+      collisionDetection={closestCenter}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className={isPending ? "opacity-60 pointer-events-none" : ""}>
-        {/* Pipeline section */}
-        <section className="mb-8">
-          <h2 className="text-lg font-medium mb-3">
-            Pipeline ({pipeline.length} brigádník{pipeline.length === 1 ? "" : pipeline.length < 5 ? "i" : "ů"})
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {Object.entries(PIPELINE_STATES).map(([stav, config]) => (
-              <PipelineColumn
-                key={stav}
-                stav={stav}
-                config={config}
-                entries={pipelineByStav[stav] ?? []}
-                readOnly={readOnly}
-              />
-            ))}
-          </div>
-        </section>
-
-        {/* Akce section */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-medium">
-              Akce ({akce.length})
-            </h2>
-          </div>
-          {akce.length === 0 ? (
-            <div className="border border-dashed rounded-xl p-8 text-center text-sm text-muted-foreground">
-              {nabidkaTyp === "opakovana"
-                ? "Zatím žádná akce. Přidejte první akci pomocí tlačítka nad sekcí."
-                : nabidkaTyp === "jednodenni"
-                  ? "Jednodenní zakázka nemá akci. Vytvořte si novou jednodenní zakázku."
-                  : "Žádná akce."}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {akce.map(a => (
-                <AkceCard key={a.id} akce={a} readOnly={readOnly} nabidkaId={nabidkaId} />
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
+      <section className={isPending ? "opacity-60 pointer-events-none" : ""}>
+        <h2 className="text-lg font-medium mb-3">
+          Pipeline ({pipeline.length} brigádník{pipeline.length === 1 ? "" : pipeline.length < 5 ? "i" : "ů"})
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          {Object.entries(PIPELINE_STATES).map(([stav, config]) => (
+            <PipelineColumn
+              key={stav}
+              stav={stav}
+              config={config}
+              entries={pipelineByStav[stav] ?? []}
+              readOnly={readOnly}
+            />
+          ))}
+        </div>
+      </section>
       <DragOverlay>
         {activeEntry && <BrigadnikCardInner entry={activeEntry} isDragging />}
       </DragOverlay>
     </DndContext>
   )
 }
-
-// ========== Pipeline column (droppable) ==========
 
 function PipelineColumn({
   stav,
@@ -323,14 +295,203 @@ function BrigadnikCardInner({ entry, isDragging }: { entry: PipelineEntry; isDra
   )
 }
 
-// ========== Akce card (droppable) ==========
+// ========== Assignment Matrix (fast phone-call UX) ==========
 
-function AkceCard({ akce, readOnly }: { akce: AkceWithPrirazeni; readOnly: boolean; nabidkaId: string }) {
-  const { isOver, setNodeRef } = useDroppable({ id: `akce:${akce.id}`, disabled: readOnly })
+type MatrixOptimistic = {
+  // key = `${brigadnikId}:${akceId}`, value = true/false (assigned)
+  [key: string]: boolean
+}
+
+function AssignmentMatrix({
+  pipeline,
+  akce,
+  readOnly,
+  nabidkaTyp,
+}: {
+  pipeline: PipelineEntry[]
+  akce: AkceWithPrirazeni[]
+  readOnly: boolean
+  nabidkaTyp: string
+}) {
+  const eligible = useMemo(
+    () => pipeline.filter(e => e.brigadnik && ELIGIBLE_STAVS.includes(e.stav)),
+    [pipeline]
+  )
+
+  // Build initial assignment set from props
+  const initialAssignments = useMemo(() => {
+    const m: MatrixOptimistic = {}
+    for (const a of akce) {
+      for (const p of a.prirazeni) {
+        if (p.status === "prirazeny") {
+          m[`${p.brigadnik_id}:${a.id}`] = true
+        }
+      }
+    }
+    return m
+  }, [akce])
+
+  const [optimistic, setOptimisticState] = useOptimistic<MatrixOptimistic, { key: string; value: boolean }>(
+    initialAssignments,
+    (state, { key, value }) => ({ ...state, [key]: value })
+  )
+
+  const [pendingCells, setPendingCells] = useState<Set<string>>(new Set())
+  const [, startTransition] = useTransition()
+
+  function toggle(brigadnikId: string, akceId: string) {
+    if (readOnly) return
+    const key = `${brigadnikId}:${akceId}`
+    const current = optimistic[key] ?? false
+    const next = !current
+
+    setPendingCells(prev => new Set(prev).add(key))
+    startTransition(async () => {
+      setOptimisticState({ key, value: next })
+      const result = next
+        ? await assignBrigadnikToAkce(akceId, brigadnikId)
+        : await unassignBrigadnikFromAkce(akceId, brigadnikId)
+      setPendingCells(prev => {
+        const n = new Set(prev)
+        n.delete(key)
+        return n
+      })
+      if (result.error) {
+        toast.error(result.error)
+        // revert via re-render (optimistic state tied to server state, will sync on revalidation)
+      } else if (!next) {
+        toast.success("Odebráno z akce")
+      } else {
+        toast.success("Přiřazeno")
+      }
+    })
+  }
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-medium">
+          Přiřazení na akce ({akce.length} {akce.length === 1 ? "akce" : akce.length < 5 ? "akce" : "akcí"})
+        </h2>
+      </div>
+
+      {akce.length === 0 ? (
+        <div className="border border-dashed rounded-xl p-8 text-center text-sm text-muted-foreground">
+          {nabidkaTyp === "jednodenni"
+            ? "Jednodenní zakázka nemá akci."
+            : nabidkaTyp === "ukoncena"
+              ? "Ukončená zakázka — read-only."
+              : "Zatím žádná akce. Přidejte první akci tlačítkem nad stránkou."}
+        </div>
+      ) : (
+        <div className="rounded-xl border overflow-x-auto bg-card">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="sticky left-0 bg-card text-left font-medium px-3 py-3 min-w-[200px] border-r">
+                  Brigádník
+                </th>
+                {akce.map(a => (
+                  <AkceHeaderCell key={a.id} akce={a} optimistic={optimistic} eligible={eligible} readOnly={readOnly} />
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {eligible.length === 0 ? (
+                <tr>
+                  <td colSpan={akce.length + 1} className="text-center text-muted-foreground py-8 px-3 text-sm">
+                    Žádný brigádník není ve stavu &bdquo;Přijatý&ldquo; pro přiřazení.
+                    <br />
+                    Posuňte v pipeline brigádníka do stavu <em>Přijatý — nehotová admin</em> nebo <em>Přijatý — vše vyřešeno</em>.
+                  </td>
+                </tr>
+              ) : (
+                eligible.map(e => {
+                  const b = e.brigadnik!
+                  const dppOk = e.dpp_stav === "podepsano"
+                  const prohlaseniOk = e.prohlaseni_stav === "podepsano"
+                  return (
+                    <tr key={e.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                      <td className="sticky left-0 bg-card group-hover:bg-muted/30 px-3 py-2 border-r">
+                        <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
+                          {b.prijmeni} {b.jmeno}
+                        </Link>
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          {dppOk && <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[9px] h-4">DPP</Badge>}
+                          {prohlaseniOk && <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[9px] h-4">Prohl.</Badge>}
+                          {e.avg_hodnoceni != null && e.avg_hodnoceni > 0 && (
+                            <span className="text-[10px] text-amber-500">⭐ {e.avg_hodnoceni.toFixed(1)}</span>
+                          )}
+                          {e.hodiny_ytd != null && e.hodiny_ytd > 0 && (
+                            <span className="text-[10px] text-muted-foreground">{e.hodiny_ytd.toFixed(0)}h</span>
+                          )}
+                        </div>
+                      </td>
+                      {akce.map(a => {
+                        const key = `${b.id}:${a.id}`
+                        const assigned = optimistic[key] ?? false
+                        const isPending = pendingCells.has(key)
+                        return (
+                          <td key={a.id} className="p-0 text-center border-r last:border-r-0">
+                            <button
+                              type="button"
+                              onClick={() => toggle(b.id, a.id)}
+                              disabled={readOnly || isPending}
+                              aria-pressed={assigned}
+                              aria-label={assigned ? `Odebrat ${b.prijmeni} ${b.jmeno} z akce ${a.nazev}` : `Přiřadit ${b.prijmeni} ${b.jmeno} na akci ${a.nazev}`}
+                              className={`w-full h-full min-h-[56px] flex items-center justify-center transition-colors ${
+                                readOnly
+                                  ? "cursor-not-allowed opacity-40"
+                                  : assigned
+                                    ? "bg-green-500/15 hover:bg-green-500/25 cursor-pointer"
+                                    : "hover:bg-muted/60 cursor-pointer"
+                              }`}
+                            >
+                              {isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                              ) : assigned ? (
+                                <span className="text-green-600 font-bold text-lg">✓</span>
+                              ) : (
+                                <span className="text-muted-foreground/40 text-lg">·</span>
+                              )}
+                            </button>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+    </section>
+  )
+}
+
+// ========== Akce header cell (sloupec = metadata akce) ==========
+
+function AkceHeaderCell({
+  akce,
+  optimistic,
+  eligible,
+  readOnly,
+}: {
+  akce: AkceWithPrirazeni
+  optimistic: MatrixOptimistic
+  eligible: PipelineEntry[]
+  readOnly: boolean
+}) {
   const [copied, setCopied] = useState(false)
   const [briefingOpen, setBriefingOpen] = useState(false)
 
-  const prirazeniCount = akce.prirazeni.filter(p => p.status === "prirazeny").length
+  // Count assigned from optimistic state
+  const assignedCount = eligible.reduce((sum, e) => {
+    const key = `${e.brigadnik!.id}:${akce.id}`
+    return sum + (optimistic[key] ? 1 : 0)
+  }, 0)
   const kapacita = akce.pocet_lidi ?? 0
 
   const pinUrl = akce.pin_kod
@@ -345,139 +506,64 @@ function AkceCard({ akce, readOnly }: { akce: AkceWithPrirazeni; readOnly: boole
   }
 
   return (
-    <div ref={setNodeRef} className={`rounded-xl transition-colors ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
-    <Card>
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <h3 className="font-medium">{akce.nazev}</h3>
-            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground mt-1">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
-                {new Date(akce.datum).toLocaleDateString("cs-CZ")}
-                {akce.cas_od && ` ${akce.cas_od.slice(0, 5)}`}
-                {akce.cas_do && `—${akce.cas_do.slice(0, 5)}`}
-              </span>
-              {akce.misto && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />
-                  {akce.misto}
-                </span>
-              )}
-              <span className="flex items-center gap-1">
-                <Users className="h-3 w-3" />
-                {prirazeniCount}{kapacita > 0 ? `/${kapacita}` : ""}
-              </span>
-            </div>
-          </div>
-          <Link href={`/app/akce/${akce.id}`}>
-            <Button variant="ghost" size="sm" className="text-xs h-7">Detail</Button>
-          </Link>
-        </div>
-
-        {kapacita > 0 && (
-          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all ${prirazeniCount >= kapacita ? "bg-green-500" : "bg-blue-500"}`}
-              style={{ width: `${Math.min(100, (prirazeniCount / kapacita) * 100)}%` }}
-            />
-          </div>
-        )}
-
-        {akce.prirazeni.length > 0 && (
-          <div className="space-y-1 pt-1 border-t">
-            {akce.prirazeni.map(p => (
-              <PrirazeniRow
-                key={p.id}
-                akceId={akce.id}
-                brigadnikId={p.brigadnik_id}
-                jmeno={`${p.brigadnik?.prijmeni ?? ""} ${p.brigadnik?.jmeno ?? ""}`.trim() || "—"}
-                status={p.status}
-                pozice={p.pozice}
-                readOnly={readOnly}
-              />
-            ))}
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
-          {pinUrl && (
-            <>
-              <Link href={`/dochazka/${akce.id}`} target="_blank" rel="noopener">
-                <Button variant="outline" size="sm" className="text-xs h-7">
-                  <ClipboardList className="h-3 w-3 mr-1" />
-                  Docházka
-                </Button>
-              </Link>
-              <Button variant="outline" size="sm" className="text-xs h-7" onClick={copyPinLink}>
-                <Copy className="h-3 w-3 mr-1" />
-                {copied ? "Zkopírováno!" : `PIN ${akce.pin_kod}`}
-              </Button>
-            </>
-          )}
-          {!readOnly && prirazeniCount > 0 && (
-            <BriefingButton
-              akceId={akce.id}
-              open={briefingOpen}
-              onOpenChange={setBriefingOpen}
-            />
-          )}
-        </div>
-      </CardContent>
-    </Card>
-    </div>
-  )
-}
-
-function PrirazeniRow({
-  akceId,
-  brigadnikId,
-  jmeno,
-  status,
-  pozice,
-  readOnly,
-}: {
-  akceId: string
-  brigadnikId: string
-  jmeno: string
-  status: string
-  pozice: string | null
-  readOnly: boolean
-}) {
-  const [isPending, startTransition] = useTransition()
-
-  function handleUnassign() {
-    if (readOnly) return
-    startTransition(async () => {
-      const result = await unassignBrigadnikFromAkce(akceId, brigadnikId)
-      if (result.error) toast.error(result.error)
-      else toast.success("Odebráno")
-    })
-  }
-
-  return (
-    <div className="flex items-center justify-between text-xs group">
-      <div className="flex items-center gap-2">
-        <span className="font-medium">{jmeno}</span>
-        {pozice && <span className="text-muted-foreground">· {pozice}</span>}
-        {status !== "prirazeny" && (
-          <Badge variant="outline" className="text-[9px] h-4">{status}</Badge>
+    <th className="text-left align-top font-normal px-3 py-2 min-w-[180px] border-r border-b-0">
+      <Link href={`/app/akce/${akce.id}`} className="block font-medium hover:underline mb-1">
+        {akce.nazev}
+      </Link>
+      <div className="flex flex-col gap-0.5 text-xs text-muted-foreground mb-2">
+        <span className="flex items-center gap-1">
+          <Calendar className="h-3 w-3" />
+          {new Date(akce.datum).toLocaleDateString("cs-CZ")}
+          {akce.cas_od && ` ${akce.cas_od.slice(0, 5)}`}
+          {akce.cas_do && `—${akce.cas_do.slice(0, 5)}`}
+        </span>
+        {akce.misto && (
+          <span className="flex items-center gap-1">
+            <MapPin className="h-3 w-3" />
+            {akce.misto}
+          </span>
         )}
       </div>
-      {!readOnly && (
-        <button
-          type="button"
-          onClick={handleUnassign}
-          disabled={isPending}
-          title="Odebrat z akce"
-          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
-    </div>
+
+      {/* Kapacita progress */}
+      <div className="mb-2">
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-0.5">
+          <span>Obsazenost</span>
+          <span className="tabular-nums">{assignedCount}{kapacita > 0 ? `/${kapacita}` : ""}</span>
+        </div>
+        <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all ${kapacita > 0 && assignedCount >= kapacita ? "bg-green-500" : "bg-blue-500"}`}
+            style={{ width: kapacita > 0 ? `${Math.min(100, (assignedCount / kapacita) * 100)}%` : `${assignedCount > 0 ? 50 : 0}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap items-center gap-1">
+        {pinUrl && (
+          <Link href={`/dochazka/${akce.id}`} target="_blank" rel="noopener">
+            <Button variant="outline" size="sm" className="text-[10px] h-6 px-2">
+              <ClipboardList className="h-3 w-3 mr-1" />
+              Docházka
+            </Button>
+          </Link>
+        )}
+        {pinUrl && (
+          <Button variant="outline" size="sm" className="text-[10px] h-6 px-2" onClick={copyPinLink} title={`PIN: ${akce.pin_kod}`}>
+            <Copy className="h-3 w-3 mr-1" />
+            {copied ? "OK!" : "PIN"}
+          </Button>
+        )}
+        {!readOnly && assignedCount > 0 && (
+          <BriefingButton akceId={akce.id} open={briefingOpen} onOpenChange={setBriefingOpen} />
+        )}
+      </div>
+    </th>
   )
 }
+
+// ========== Briefing dialog ==========
 
 function BriefingButton({
   akceId,
@@ -506,12 +592,12 @@ function BriefingButton({
 
   return (
     <>
-      <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => onOpenChange(true)}>
+      <Button variant="outline" size="sm" className="text-[10px] h-6 px-2" onClick={() => onOpenChange(true)}>
         <Send className="h-3 w-3 mr-1" />
-        Odeslat briefing
+        Brief.
       </Button>
       {open && (
-        <div className="absolute inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => onOpenChange(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => onOpenChange(false)}>
           <div className="bg-background rounded-lg p-6 max-w-md w-full space-y-3" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold">Odeslat briefing</h3>
             <p className="text-sm text-muted-foreground">
@@ -536,6 +622,3 @@ function BriefingButton({
     </>
   )
 }
-
-// Suppress unused import warning (Trash2 reserved for future use)
-void Trash2
