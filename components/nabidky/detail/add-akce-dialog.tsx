@@ -54,8 +54,8 @@ export function AddAkceDialog({ nabidkaId, defaultNazev, defaultMisto, defaultKl
               <Input id="aa-datum" name="datum" type="date" required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="aa-misto">Místo</Label>
-              <Input id="aa-misto" name="misto" defaultValue={defaultMisto ?? ""} />
+              <Label htmlFor="aa-misto">Místo *</Label>
+              <Input id="aa-misto" name="misto" defaultValue={defaultMisto ?? ""} required />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

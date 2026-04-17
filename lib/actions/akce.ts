@@ -7,9 +7,9 @@ import { z } from "zod"
 const akceSchema = z.object({
   nazev: z.string().min(1, "Název je povinný"),
   datum: z.string().min(1, "Datum je povinné"),
+  misto: z.string().min(1, "Místo je povinné"),
   cas_od: z.string().optional(),
   cas_do: z.string().optional(),
-  misto: z.string().optional(),
   klient: z.string().optional(),
   nabidka_id: z.string().optional(),
   pocet_lidi: z.coerce.number().int().positive().optional(),
