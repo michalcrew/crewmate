@@ -31,16 +31,13 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" })
 }
 
-/** Get display name for thread — brigadník name or sender from last message preview */
+/** Get display name for thread — brigadník name or sender info */
 function getThreadDisplayName(thread: EmailThread): string {
   if (thread.brigadnik) {
     return `${thread.brigadnik.jmeno} ${thread.brigadnik.prijmeni}`
   }
-  // For unmatched threads, show sender info from preview (format "Od: name")
-  if (thread.last_message_preview?.startsWith("Od: ")) {
-    return thread.last_message_preview.slice(4)
-  }
-  // Fallback to subject
+  if (thread.sender_name) return thread.sender_name
+  if (thread.sender_email) return thread.sender_email
   return thread.subject || "Neznámý odesílatel"
 }
 
@@ -67,7 +64,7 @@ export function InboxLayout({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
 
-  // Client-side search filtering
+  // Client-side search filtering (name, email, subject, sender)
   const filteredThreads = searchQuery.trim()
     ? threads.filter((t) => {
         const q = searchQuery.toLowerCase()
@@ -77,7 +74,10 @@ export function InboxLayout({
         const email = t.brigadnik?.email?.toLowerCase() ?? ""
         const subject = t.subject?.toLowerCase() ?? ""
         const preview = t.last_message_preview?.toLowerCase() ?? ""
-        return name.includes(q) || email.includes(q) || subject.includes(q) || preview.includes(q)
+        const senderName = t.sender_name?.toLowerCase() ?? ""
+        const senderEmail = t.sender_email?.toLowerCase() ?? ""
+        return name.includes(q) || email.includes(q) || subject.includes(q)
+          || preview.includes(q) || senderName.includes(q) || senderEmail.includes(q)
       })
     : threads
 

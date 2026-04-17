@@ -187,8 +187,40 @@ export async function getThreads(input?: unknown): Promise<ThreadListResult> {
     return { threads: [], total: 0 }
   }
 
+  // For threads without brigadník, fetch sender info from last inbound message
+  const threads = data ?? []
+  const unmatchedIds = threads.filter(t => !t.brigadnik_id).map(t => t.id)
+
+  if (unmatchedIds.length > 0) {
+    const { data: senderData } = await supabase
+      .from("email_messages")
+      .select("thread_id, from_email, from_name, direction")
+      .in("thread_id", unmatchedIds)
+      .eq("direction", "inbound")
+      .order("sent_at", { ascending: false })
+
+    // Group by thread_id, take first (latest) inbound message
+    const senderMap = new Map<string, { from_email: string; from_name: string | null }>()
+    for (const msg of senderData ?? []) {
+      if (!senderMap.has(msg.thread_id)) {
+        senderMap.set(msg.thread_id, { from_email: msg.from_email, from_name: msg.from_name })
+      }
+    }
+
+    // Attach sender info to threads
+    for (const thread of threads) {
+      if (!thread.brigadnik_id) {
+        const sender = senderMap.get(thread.id)
+        if (sender) {
+          (thread as Record<string, unknown>).sender_name = sender.from_name
+          ;(thread as Record<string, unknown>).sender_email = sender.from_email
+        }
+      }
+    }
+  }
+
   return {
-    threads: data ?? [],
+    threads,
     total: count ?? 0,
   }
 }

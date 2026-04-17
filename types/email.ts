@@ -35,6 +35,9 @@ export interface EmailThread {
     prijmeni: string
     email: string
   }
+  // For unmatched threads — sender from last inbound message
+  sender_name?: string | null
+  sender_email?: string | null
 }
 
 export interface EmailMessage {
