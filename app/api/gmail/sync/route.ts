@@ -25,7 +25,13 @@ export async function POST(request: NextRequest) {
     if (action === "watch") {
       return await registerWatch()
     } else if (action === "sync") {
-      return await syncRecentEmails(body.maxResults ?? 20)
+      return await syncRecentEmails(body.maxResults ?? 20, body.force ?? false)
+    } else if (action === "resync") {
+      // Delete all threads/messages and reimport with attachments
+      const admin = createAdminClient()
+      await admin.from("email_messages").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+      await admin.from("email_threads").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+      return await syncRecentEmails(body.maxResults ?? 50, true)
     } else {
       return NextResponse.json({ error: "Unknown action" }, { status: 400 })
     }
@@ -72,7 +78,7 @@ async function registerWatch() {
 /**
  * Sync recent emails from Gmail into Crewmate DB
  */
-async function syncRecentEmails(maxResults: number) {
+async function syncRecentEmails(maxResults: number, force: boolean = false) {
   const gmail = getGmailClient()
   const admin = createAdminClient()
   const gmailEmail = getGmailUserEmail_()
@@ -98,7 +104,7 @@ async function syncRecentEmails(maxResults: number) {
       .eq("gmail_message_id", msg.id)
       .single()
 
-    if (existing) {
+    if (existing && !force) {
       skipped++
       continue
     }
@@ -171,7 +177,7 @@ async function syncRecentEmails(maxResults: number) {
     }
 
     // Insert message
-    await admin.from("email_messages").insert({
+    const { data: dbMsg } = await admin.from("email_messages").insert({
       thread_id: dbThreadId,
       gmail_message_id: msg.id,
       direction,
@@ -182,7 +188,12 @@ async function syncRecentEmails(maxResults: number) {
       body_html: bodyHtml,
       body_text: bodyText,
       sent_at: date ? new Date(date).toISOString() : new Date().toISOString(),
-    })
+    }).select("id").single()
+
+    // Download and store attachments
+    if (dbMsg && fullMsg.data.payload) {
+      await processAttachments(gmail, admin, fullMsg.data.payload, msg.id, dbMsg.id, dbThreadId)
+    }
 
     imported++
   }
@@ -206,6 +217,84 @@ function extractEmail(header: string): string {
 function extractName(header: string): string | null {
   const match = header.match(/^"?([^"<]+)"?\s*</)
   return match?.[1]?.trim() ?? null
+}
+
+async function processAttachments(
+  gmail: ReturnType<typeof getGmailClient>,
+  admin: ReturnType<typeof createAdminClient>,
+  payload: unknown,
+  gmailMessageId: string,
+  dbMessageId: string,
+  threadId: string,
+) {
+  const parts = collectAttachmentParts(payload)
+
+  for (const part of parts) {
+    if (!part.filename || !part.attachmentId) continue
+
+    try {
+      // Download attachment data from Gmail
+      const attachment = await gmail.users.messages.attachments.get({
+        userId: "me",
+        messageId: gmailMessageId,
+        id: part.attachmentId,
+      })
+
+      const data = attachment.data.data
+      if (!data) continue
+
+      const buffer = Buffer.from(data, "base64url")
+      const storagePath = `email-attachments/${threadId}/${dbMessageId}/${part.filename}`
+
+      // Upload to Supabase Storage
+      await admin.storage
+        .from("crewmate-storage")
+        .upload(storagePath, buffer, {
+          contentType: part.mimeType ?? "application/octet-stream",
+          upsert: true,
+        })
+
+      // Create attachment record
+      await admin.from("email_attachments").insert({
+        message_id: dbMessageId,
+        filename: part.filename,
+        mime_type: part.mimeType ?? "application/octet-stream",
+        size_bytes: part.size ?? buffer.length,
+        storage_path: storagePath,
+      })
+    } catch (err) {
+      console.error(`Attachment download error for ${part.filename}:`, err)
+    }
+  }
+}
+
+function collectAttachmentParts(
+  payload: unknown
+): { filename: string; attachmentId: string; mimeType?: string; size?: number }[] {
+  const result: { filename: string; attachmentId: string; mimeType?: string; size?: number }[] = []
+  const p = payload as {
+    filename?: string
+    mimeType?: string
+    body?: { attachmentId?: string; size?: number }
+    parts?: unknown[]
+  }
+
+  if (p?.filename && p.body?.attachmentId) {
+    result.push({
+      filename: p.filename,
+      attachmentId: p.body.attachmentId,
+      mimeType: p.mimeType,
+      size: p.body.size,
+    })
+  }
+
+  if (p?.parts) {
+    for (const part of p.parts) {
+      result.push(...collectAttachmentParts(part))
+    }
+  }
+
+  return result
 }
 
 function extractBody(payload: unknown, mimeType: string): string {
