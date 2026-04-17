@@ -150,13 +150,19 @@ async function syncRecentEmails(maxResults: number) {
         status: direction === "inbound" ? "ceka_na_nas" : "ceka_na_brigadnika",
       }).eq("id", dbThreadId)
     } else {
+      // For unmatched inbound, store sender info in preview
+      const senderName = extractName(from) ?? fromEmail
+      const preview = direction === "inbound" && !brigadnikId
+        ? `Od: ${senderName}`
+        : subject.slice(0, 100)
+
       const { data: newThread } = await admin.from("email_threads").insert({
         brigadnik_id: brigadnikId,
         gmail_thread_id: threadId,
         subject,
         status: direction === "inbound" ? "ceka_na_nas" : direction === "outbound" ? "ceka_na_brigadnika" : "nove",
         last_message_at: date ? new Date(date).toISOString() : new Date().toISOString(),
-        last_message_preview: subject.slice(0, 100),
+        last_message_preview: preview,
         message_count: 1,
       }).select("id").single()
 

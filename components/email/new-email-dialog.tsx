@@ -4,9 +4,12 @@ import { useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { sendEmailAction } from "@/lib/actions/email"
+import { sendDocumentAction } from "@/lib/actions/email-documents"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Plus, Send, Search } from "lucide-react"
+import { Plus, Send, Search, FileText } from "lucide-react"
+
+type EmailType = "plain" | "dpp" | "prohlaseni"
 
 export function NewEmailDialog({
   brigadnici,
@@ -16,8 +19,13 @@ export function NewEmailDialog({
   const [open, setOpen] = useState(false)
   const [selectedBrigadnik, setSelectedBrigadnik] = useState<string>("")
   const [search, setSearch] = useState("")
+  const [emailType, setEmailType] = useState<EmailType>("plain")
   const [subject, setSubject] = useState("")
   const [body, setBody] = useState("")
+  const [mesic, setMesic] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
+  })
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -28,33 +36,64 @@ export function NewEmailDialog({
   const selected = brigadnici.find(b => b.id === selectedBrigadnik)
 
   function handleSend() {
-    if (!selectedBrigadnik || !body.trim()) {
-      toast.error("Vyberte brigádníka a napište text emailu")
+    if (!selectedBrigadnik) {
+      toast.error("Vyberte brigádníka")
       return
     }
 
     startTransition(async () => {
-      const result = await sendEmailAction({
-        brigadnik_id: selectedBrigadnik,
-        subject: subject || "Bez předmětu",
-        body_html: `<div>${body.replace(/\n/g, "<br/>")}</div>`,
-        document_type: "plain",
-      })
+      if (emailType === "dpp" || emailType === "prohlaseni") {
+        // Send document (DPP/prohlášení with PDF)
+        const defaultBody = emailType === "dpp"
+          ? "Dobrý den,\n\nv příloze Vám zasíláme DPP k podpisu.\n\nProsím vytiskněte, podepište a pošlete zpět.\n\nDěkujeme"
+          : "Dobrý den,\n\nv příloze Vám zasíláme prohlášení poplatníka k podpisu.\n\nProsím vyplňte datum, podepište a pošlete zpět.\n\nDěkujeme"
 
-      if (result.success) {
-        toast.success("Email odeslán")
-        setOpen(false)
-        setSelectedBrigadnik("")
-        setSubject("")
-        setBody("")
-        router.refresh()
-        if (result.thread_id) {
-          router.push(`/app/emaily/${result.thread_id}`)
+        const result = await sendDocumentAction({
+          brigadnik_id: selectedBrigadnik,
+          document_type: emailType,
+          mesic,
+          body_html: `<div>${(body || defaultBody).replace(/\n/g, "<br/>")}</div>`,
+        })
+
+        if (result.success) {
+          toast.success(`${emailType === "dpp" ? "DPP" : "Prohlášení"} odesláno s PDF přílohou`)
+          resetAndClose()
+          if (result.thread_id) router.push(`/app/emaily/${result.thread_id}`)
+        } else {
+          toast.error(result.error ?? "Nepodařilo se odeslat")
         }
       } else {
-        toast.error(result.error ?? "Nepodařilo se odeslat email")
+        // Send plain email
+        if (!body.trim()) {
+          toast.error("Napište text emailu")
+          return
+        }
+
+        const result = await sendEmailAction({
+          brigadnik_id: selectedBrigadnik,
+          subject: subject || "Bez předmětu",
+          body_html: `<div>${body.replace(/\n/g, "<br/>")}</div>`,
+          document_type: "plain",
+        })
+
+        if (result.success) {
+          toast.success("Email odeslán")
+          resetAndClose()
+          if (result.thread_id) router.push(`/app/emaily/${result.thread_id}`)
+        } else {
+          toast.error(result.error ?? "Nepodařilo se odeslat email")
+        }
       }
     })
+  }
+
+  function resetAndClose() {
+    setOpen(false)
+    setSelectedBrigadnik("")
+    setSubject("")
+    setBody("")
+    setEmailType("plain")
+    router.refresh()
   }
 
   return (
@@ -112,30 +151,81 @@ export function NewEmailDialog({
             </div>
           )}
 
-          {/* Subject */}
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder="Předmět"
-            className="border rounded-lg px-3 py-2 text-sm"
-            disabled={isPending}
-          />
+          {/* Email type */}
+          <div>
+            <label className="text-sm font-medium">Typ emailu</label>
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => setEmailType("plain")}
+                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                  emailType === "plain" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                }`}
+              >
+                Běžný email
+              </button>
+              <button
+                onClick={() => setEmailType("dpp")}
+                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                  emailType === "dpp" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                }`}
+              >
+                <FileText className="h-3 w-3 inline mr-1" />
+                DPP
+              </button>
+              <button
+                onClick={() => setEmailType("prohlaseni")}
+                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                  emailType === "prohlaseni" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                }`}
+              >
+                <FileText className="h-3 w-3 inline mr-1" />
+                Prohlášení
+              </button>
+            </div>
+          </div>
+
+          {/* Month selector for DPP/prohlášení */}
+          {(emailType === "dpp" || emailType === "prohlaseni") && (
+            <div>
+              <label className="text-sm font-medium">Měsíc</label>
+              <input
+                type="month"
+                value={mesic.slice(0, 7)}
+                onChange={(e) => setMesic(`${e.target.value}-01`)}
+                className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                📎 PDF bude vygenerováno a přiloženo automaticky
+              </p>
+            </div>
+          )}
+
+          {/* Subject (only for plain email) */}
+          {emailType === "plain" && (
+            <input
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Předmět"
+              className="border rounded-lg px-3 py-2 text-sm"
+              disabled={isPending}
+            />
+          )}
 
           {/* Body */}
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Text emailu..."
-            className="min-h-[120px] border rounded-lg px-3 py-2 text-sm resize-none"
+            placeholder={emailType === "plain" ? "Text emailu..." : "Text emailu (volitelné — použije se šablona)..."}
+            className="min-h-[100px] border rounded-lg px-3 py-2 text-sm resize-none"
             disabled={isPending}
           />
 
           {/* Send */}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>Zrušit</Button>
-            <Button onClick={handleSend} disabled={isPending || !selectedBrigadnik || !body.trim()}>
+            <Button onClick={handleSend} disabled={isPending || !selectedBrigadnik}>
               <Send className="h-4 w-4 mr-2" />
-              {isPending ? "Odesílání..." : "Odeslat"}
+              {isPending ? "Odesílání..." : emailType === "plain" ? "Odeslat" : `Odeslat ${emailType === "dpp" ? "DPP" : "prohlášení"}`}
             </Button>
           </div>
         </div>

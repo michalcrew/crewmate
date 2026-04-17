@@ -2,7 +2,8 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
+import { Search } from "lucide-react"
 import type { EmailThread, ConversationStatus } from "@/types/email"
 import { ConversationStatusBadge } from "./conversation-status-badge"
 import { cn } from "@/lib/utils"
@@ -30,6 +31,27 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" })
 }
 
+/** Get display name for thread — brigadník name or sender from last message preview */
+function getThreadDisplayName(thread: EmailThread): string {
+  if (thread.brigadnik) {
+    return `${thread.brigadnik.jmeno} ${thread.brigadnik.prijmeni}`
+  }
+  // For unmatched threads, show sender info from preview (format "Od: name")
+  if (thread.last_message_preview?.startsWith("Od: ")) {
+    return thread.last_message_preview.slice(4)
+  }
+  // Fallback to subject
+  return thread.subject || "Neznámý odesílatel"
+}
+
+function getThreadInitials(thread: EmailThread): string {
+  if (thread.brigadnik) {
+    return `${thread.brigadnik.jmeno[0]}${thread.brigadnik.prijmeni[0]}`
+  }
+  const name = thread.subject || "?"
+  return name[0]?.toUpperCase() || "?"
+}
+
 export function InboxLayout({
   threads,
   total,
@@ -43,9 +65,35 @@ export function InboxLayout({
 }) {
   const router = useRouter()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+
+  // Client-side search filtering
+  const filteredThreads = searchQuery.trim()
+    ? threads.filter((t) => {
+        const q = searchQuery.toLowerCase()
+        const name = t.brigadnik
+          ? `${t.brigadnik.jmeno} ${t.brigadnik.prijmeni}`.toLowerCase()
+          : ""
+        const email = t.brigadnik?.email?.toLowerCase() ?? ""
+        const subject = t.subject?.toLowerCase() ?? ""
+        const preview = t.last_message_preview?.toLowerCase() ?? ""
+        return name.includes(q) || email.includes(q) || subject.includes(q) || preview.includes(q)
+      })
+    : threads
 
   return (
     <div className="flex-1 flex flex-col gap-4 p-4">
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Hledat v emailech (předmět, jméno, email)..."
+          className="w-full border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+      </div>
+
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
         {STATUS_TABS.map((tab) => (
@@ -72,16 +120,25 @@ export function InboxLayout({
       </div>
 
       {/* Thread list */}
-      {threads.length === 0 ? (
+      {filteredThreads.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
           <div className="text-center">
-            <p className="text-lg font-medium">Zatím žádné emaily</p>
-            <p className="text-sm mt-1">Začněte odesláním emailu z profilu brigádníka</p>
+            {searchQuery ? (
+              <>
+                <p className="text-lg font-medium">Nic nenalezeno</p>
+                <p className="text-sm mt-1">Zkuste jiný hledaný výraz</p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-medium">Zatím žádné emaily</p>
+                <p className="text-sm mt-1">Začněte odesláním emailu z profilu brigádníka</p>
+              </>
+            )}
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-1">
-          {threads.map((thread) => (
+          {filteredThreads.map((thread) => (
             <Link
               key={thread.id}
               href={`/app/emaily/${thread.id}`}
@@ -93,18 +150,14 @@ export function InboxLayout({
             >
               {/* Avatar */}
               <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-medium shrink-0">
-                {thread.brigadnik
-                  ? `${thread.brigadnik.jmeno[0]}${thread.brigadnik.prijmeni[0]}`
-                  : "?"}
+                {getThreadInitials(thread)}
               </div>
 
               {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium truncate">
-                    {thread.brigadnik
-                      ? `${thread.brigadnik.jmeno} ${thread.brigadnik.prijmeni}`
-                      : "Nepřiřazený"}
+                    {getThreadDisplayName(thread)}
                   </span>
                   <span className="text-xs text-muted-foreground shrink-0">
                     {formatRelativeTime(thread.last_message_at)}
