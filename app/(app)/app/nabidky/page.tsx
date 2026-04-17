@@ -23,7 +23,11 @@ export default async function NabidkyPage({
   const params = await searchParams
   const nabidky = await getNabidky({ filtr: params.filtr })
 
-  const totalPipeline = nabidky.reduce((sum, n) => sum + (n.stats?.zajemci ?? 0) + (n.stats?.prijati ?? 0) + (n.stats?.vyreseno ?? 0), 0)
+  const totalPipeline = nabidky.reduce((sum, n) => {
+    const s = n.stats
+    if (!s) return sum
+    return sum + s.zajemci + s.kontaktovani + s.nehotovi + s.vyreseno
+  }, 0)
   const totalPrijati = nabidky.reduce((sum, n) => sum + (n.stats?.vyreseno ?? 0), 0)
 
   return (
@@ -65,7 +69,8 @@ export default async function NabidkyPage({
                 <TableBody>
                   {nabidky.map((n) => {
                     const z = n.stats?.zajemci ?? 0
-                    const p = n.stats?.prijati ?? 0
+                    const k = n.stats?.kontaktovani ?? 0
+                    const nh = n.stats?.nehotovi ?? 0
                     const v = n.stats?.vyreseno ?? 0
                     const o = n.stats?.odmitnuty ?? 0
                     return (
@@ -81,18 +86,16 @@ export default async function NabidkyPage({
                           <TypBadge typ={n.typ} />
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center justify-center gap-1 text-xs tabular-nums">
-                            <span className="text-blue-600">{z}</span>
+                          <div className="flex items-center justify-center gap-1 text-xs tabular-nums" title="Zájemce → Kontaktován → Nehotová admin → Vše vyřešeno · Odmítnutý">
+                            <span className="text-blue-500">{z}</span>
                             <span className="text-muted-foreground">→</span>
-                            <span className="text-amber-600">{p}</span>
+                            <span className="text-yellow-500">{k}</span>
                             <span className="text-muted-foreground">→</span>
-                            <span className="text-green-600">{v}</span>
-                            {o > 0 && (
-                              <>
-                                <span className="text-muted-foreground">·</span>
-                                <span className="text-red-500">{o}✗</span>
-                              </>
-                            )}
+                            <span className="text-orange-500">{nh}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="text-green-500">{v}</span>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-red-500">{o}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-center">

@@ -162,7 +162,8 @@ export async function getNabidky(filter?: { filtr?: string }) {
       stats: {
         celkem: entries.length,
         zajemci: entries.filter(e => e.stav === "zajemce").length,
-        prijati: entries.filter(e => ["prijaty_nehotova_admin", "prijaty_vse_vyreseno"].includes(e.stav)).length,
+        kontaktovani: entries.filter(e => e.stav === "kontaktovan").length,
+        nehotovi: entries.filter(e => e.stav === "prijaty_nehotova_admin").length,
         vyreseno: entries.filter(e => e.stav === "prijaty_vse_vyreseno").length,
         odmitnuty: entries.filter(e => e.stav === "odmitnuty").length,
       }
