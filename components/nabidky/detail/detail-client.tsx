@@ -498,9 +498,9 @@ function AkceHeaderCell({
     ? `${typeof window !== "undefined" ? window.location.origin : ""}/dochazka/${akce.id}`
     : null
 
-  function copyPinLink() {
-    if (!pinUrl) return
-    navigator.clipboard.writeText(`${pinUrl} (PIN: ${akce.pin_kod})`)
+  function copyPin() {
+    if (!akce.pin_kod) return
+    navigator.clipboard.writeText(akce.pin_kod)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -549,10 +549,10 @@ function AkceHeaderCell({
             </Button>
           </Link>
         )}
-        {pinUrl && (
-          <Button variant="outline" size="sm" className="text-[10px] h-6 px-2" onClick={copyPinLink} title={`PIN: ${akce.pin_kod}`}>
+        {akce.pin_kod && (
+          <Button variant="outline" size="sm" className="text-[10px] h-6 px-2 tabular-nums" onClick={copyPin} title="Kliknutím zkopírujete PIN">
             <Copy className="h-3 w-3 mr-1" />
-            {copied ? "OK!" : "PIN"}
+            {copied ? "Zkopírováno" : akce.pin_kod}
           </Button>
         )}
         {!readOnly && assignedCount > 0 && (
