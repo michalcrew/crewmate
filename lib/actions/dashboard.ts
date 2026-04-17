@@ -5,11 +5,11 @@ import { createClient } from "@/lib/supabase/server"
 export async function getDashboardData() {
   const supabase = await createClient()
 
-  // Nabidky s obsazeností
+  // Nabidky s obsazeností (aktivní = ne-ukončené)
   const { data: nabidky } = await supabase
     .from("nabidky")
-    .select("id, nazev, pocet_lidi, stav, pipeline_entries(count)")
-    .eq("stav", "aktivni")
+    .select("id, nazev, pocet_lidi, typ, publikovano, pipeline_entries(count)")
+    .neq("typ", "ukoncena")
     .order("created_at", { ascending: false })
 
   // Blížící se akce (příštích 30 dní)

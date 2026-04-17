@@ -2,7 +2,6 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { MapPin, Banknote, Users, Calendar, ArrowLeft } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/server"
 import { PrihlaskaForm } from "@/components/web/prihlaska-form"
 
@@ -12,8 +11,8 @@ async function getNabidkaBySlug(slug: string) {
     .from("nabidky")
     .select("*")
     .eq("slug", slug)
-    .eq("zverejnena", true)
-    .eq("stav", "aktivni")
+    .eq("publikovano", true)
+    .in("typ", ["jednodenni", "opakovana"])
     .single()
   return data
 }
@@ -52,7 +51,7 @@ export default async function NabidkaPublicPage({
         <div className="lg:col-span-3">
           <div className="mb-2">
             <span className="text-xs font-semibold text-[#000066] uppercase tracking-widest">
-              {nabidka.typ === "prubezna" ? "Průběžný nábor" : "Jednorázová akce"}
+              {nabidka.typ === "opakovana" ? "Průběžný nábor" : "Jednorázová akce"}
             </span>
           </div>
           <h1 className="text-3xl md:text-4xl font-black mb-3">{nabidka.nazev}</h1>

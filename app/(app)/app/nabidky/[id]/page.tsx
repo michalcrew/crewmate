@@ -2,19 +2,86 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getNabidkaById } from "@/lib/actions/nabidky"
 import { getPipelineByNabidka } from "@/lib/actions/pipeline"
-import { PipelineBoard } from "@/components/pipeline/pipeline-board"
-import { PIPELINE_STATES } from "@/lib/constants"
+import { getAkceByNabidka } from "@/lib/actions/akce"
+import { getBrigadnici } from "@/lib/actions/brigadnici"
+import { createClient } from "@/lib/supabase/server"
+import { TypBadge } from "@/components/nabidky/typ-badge"
+import { PublishToggle } from "@/components/nabidky/publish-toggle"
 import { EditNabidkaDialog } from "@/components/nabidky/edit-nabidka-dialog"
 import { AddToPipelineDialog } from "@/components/pipeline/add-to-pipeline-dialog"
-import { getBrigadnici } from "@/lib/actions/brigadnici"
+import { AddAkceDialog } from "@/components/nabidky/detail/add-akce-dialog"
+import { UkoncitButton } from "@/components/nabidky/detail/ukoncit-button"
+import {
+  NabidkaDetailClient,
+  type PipelineEntry as ClientPipelineEntry,
+  type AkceWithPrirazeni,
+} from "@/components/nabidky/detail/detail-client"
 
 export const metadata: Metadata = {
-  title: "Detail nabídky",
+  title: "Detail zakázky",
+}
+
+async function enrichPipeline(
+  pipeline: Awaited<ReturnType<typeof getPipelineByNabidka>>
+): Promise<ClientPipelineEntry[]> {
+  if (pipeline.length === 0) return []
+  const supabase = await createClient()
+  const brigIds = [...new Set(pipeline.map(p => (p.brigadnik as unknown as { id: string } | null)?.id).filter(Boolean))] as string[]
+
+  // Current month smluvni_stav
+  const mesic = new Date()
+  mesic.setDate(1)
+  const mesicStr = mesic.toISOString().slice(0, 10)
+  const { data: smluvni } = await supabase
+    .from("smluvni_stav")
+    .select("brigadnik_id, dpp_stav, prohlaseni_stav")
+    .in("brigadnik_id", brigIds)
+    .eq("mesic", mesicStr)
+
+  const smluvniMap = new Map<string, { dpp_stav: string; prohlaseni_stav: string }>()
+  for (const s of smluvni ?? []) {
+    smluvniMap.set(s.brigadnik_id, { dpp_stav: s.dpp_stav, prohlaseni_stav: s.prohlaseni_stav })
+  }
+
+  // YTD hours + avg rating
+  const yearStart = `${new Date().getFullYear()}-01-01`
+  const { data: dochazka } = await supabase
+    .from("dochazka")
+    .select("brigadnik_id, hodin_celkem, hodnoceni, created_at")
+    .in("brigadnik_id", brigIds)
+    .gte("created_at", yearStart)
+
+  const statsMap = new Map<string, { hours: number; ratingSum: number; ratingCount: number }>()
+  for (const d of dochazka ?? []) {
+    const s = statsMap.get(d.brigadnik_id) ?? { hours: 0, ratingSum: 0, ratingCount: 0 }
+    s.hours += Number(d.hodin_celkem) || 0
+    if (d.hodnoceni != null) {
+      s.ratingSum += d.hodnoceni
+      s.ratingCount += 1
+    }
+    statsMap.set(d.brigadnik_id, s)
+  }
+
+  return pipeline.map(p => {
+    const b = p.brigadnik as unknown as ClientPipelineEntry["brigadnik"]
+    const bid = b?.id
+    const sm = bid ? smluvniMap.get(bid) : undefined
+    const st = bid ? statsMap.get(bid) : undefined
+    return {
+      id: p.id,
+      stav: p.stav,
+      brigadnik: b ?? null,
+      naborar: p.naborar ?? null,
+      dpp_stav: sm?.dpp_stav ?? null,
+      prohlaseni_stav: sm?.prohlaseni_stav ?? null,
+      hodiny_ytd: st?.hours,
+      avg_hodnoceni: st && st.ratingCount > 0 ? st.ratingSum / st.ratingCount : null,
+    }
+  })
 }
 
 export default async function NabidkaDetailPage({
@@ -28,75 +95,101 @@ export default async function NabidkaDetailPage({
 
   let pipeline: Awaited<ReturnType<typeof getPipelineByNabidka>> = []
   let allBrigadnici: Awaited<ReturnType<typeof getBrigadnici>> = []
+  let akceRaw: Awaited<ReturnType<typeof getAkceByNabidka>> = []
 
   try {
-    ;[pipeline, allBrigadnici] = await Promise.all([
+    ;[pipeline, allBrigadnici, akceRaw] = await Promise.all([
       getPipelineByNabidka(id),
       getBrigadnici(),
+      getAkceByNabidka(id),
     ])
   } catch {
-    // Graceful fallback if pipeline/brigadnici queries fail
+    // graceful fallback
   }
-  const pipelineIds = new Set(pipeline.map(p => (p.brigadnik as unknown as { id: string })?.id))
+
+  const enrichedPipeline = await enrichPipeline(pipeline)
+
+  const pipelineIds = new Set(
+    (pipeline as Array<{ brigadnik: { id: string } | null }>).map(p => p.brigadnik?.id).filter(Boolean)
+  )
   const availableBrigadnici = (allBrigadnici ?? [])
     .filter(b => !pipelineIds.has(b.id))
     .map(b => ({ id: b.id, jmeno: b.jmeno, prijmeni: b.prijmeni, telefon: b.telefon, email: b.email }))
 
-  const pipelineByStav = Object.keys(PIPELINE_STATES).reduce(
-    (acc, stav) => {
-      acc[stav] = pipeline.filter((e) => e.stav === stav)
-      return acc
-    },
-    {} as Record<string, typeof pipeline>
-  )
+  const akce: AkceWithPrirazeni[] = (akceRaw ?? []).map(a => ({
+    id: a.id,
+    nazev: a.nazev,
+    datum: a.datum,
+    cas_od: a.cas_od ?? null,
+    cas_do: a.cas_do ?? null,
+    misto: a.misto ?? null,
+    pocet_lidi: a.pocet_lidi ?? null,
+    pin_kod: a.pin_kod ?? null,
+    stav: a.stav ?? "planovana",
+    prirazeni: (a.prirazeni ?? []) as AkceWithPrirazeni["prirazeni"],
+  }))
+
+  const isUkoncena = nabidka.typ === "ukoncena"
+  const isOpakovana = nabidka.typ === "opakovana"
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex flex-wrap items-start gap-3 mb-6">
         <Link href="/app/nabidky">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-4 w-4" /><span className="sr-only">Zpět</span>
           </Button>
         </Link>
-        <div>
-          <h1 className="text-2xl font-semibold">{nabidka.nazev}</h1>
-          <div className="flex items-center gap-2 mt-1">
-            <Badge variant="outline" className="text-xs">
-              {nabidka.typ === "prubezna" ? "Průběžná" : "Jednorázová"}
-            </Badge>
-            {nabidka.klient && (
-              <span className="text-sm text-muted-foreground">{nabidka.klient}</span>
-            )}
-            {nabidka.misto && (
-              <span className="text-sm text-muted-foreground">| {nabidka.misto}</span>
-            )}
-            {nabidka.odmena && (
-              <span className="text-sm text-muted-foreground">| {nabidka.odmena}</span>
-            )}
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <h1 className="text-2xl font-semibold">{nabidka.nazev}</h1>
+            <TypBadge typ={nabidka.typ} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            {nabidka.klient && <span>{nabidka.klient}</span>}
+            {nabidka.misto && <span>· {nabidka.misto}</span>}
+            {nabidka.odmena && <span>· {nabidka.odmena}</span>}
+            {isUkoncena && <span className="text-amber-600 font-medium">· Ukončeno</span>}
           </div>
         </div>
-        <div className="ml-auto">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Publikováno:</span>
+            <PublishToggle id={nabidka.id} publikovano={nabidka.publikovano} typ={nabidka.typ} />
+          </div>
           <EditNabidkaDialog nabidka={nabidka} />
+          {isOpakovana && <UkoncitButton id={nabidka.id} nazev={nabidka.nazev} />}
         </div>
       </div>
 
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-medium">
-            Pipeline ({pipeline.length} brigádník{pipeline.length === 1 ? "" : pipeline.length < 5 ? "i" : "ů"})
-          </h2>
+      {/* Top-action toolbar */}
+      {!isUkoncena && (
+        <div className="flex flex-wrap items-center gap-2 mb-5">
           <AddToPipelineDialog nabidkaId={id} brigadnici={availableBrigadnici} />
+          {isOpakovana && (
+            <AddAkceDialog
+              nabidkaId={id}
+              defaultNazev={nabidka.nazev}
+              defaultMisto={nabidka.misto ?? undefined}
+              defaultKlient={nabidka.klient ?? undefined}
+            />
+          )}
         </div>
-        <PipelineBoard
-          nabidkaId={id}
-          pipelineByStav={pipelineByStav}
-        />
-      </div>
+      )}
+
+      {/* Pipeline + Akce */}
+      <NabidkaDetailClient
+        nabidkaId={id}
+        nabidkaTyp={nabidka.typ}
+        pipeline={enrichedPipeline}
+        akce={akce}
+        readOnly={isUkoncena}
+      />
 
       {(nabidka.popis_prace || nabidka.pozadavky || nabidka.koho_hledame || nabidka.co_nabizime) && (
-        <Card>
+        <Card className="mt-8">
           <CardHeader>
-            <CardTitle>Detail</CardTitle>
+            <CardTitle>Detail zakázky</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {nabidka.popis_prace && (

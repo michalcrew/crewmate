@@ -13,8 +13,8 @@ async function getPublicNabidky() {
   const { data } = await supabase
     .from("nabidky")
     .select("id, nazev, typ, klient, typ_pozice, popis_prace, odmena, misto, datum_od, datum_do, slug")
-    .eq("zverejnena", true)
-    .eq("stav", "aktivni")
+    .eq("publikovano", true)
+    .in("typ", ["jednodenni", "opakovana"])
     .order("created_at", { ascending: false })
   return data ?? []
 }
@@ -106,7 +106,7 @@ export default async function PracePage({
                     )}
                   </div>
                   <span className="text-xs font-medium text-[#000066] bg-[#000066]/5 px-3 py-1 rounded-full shrink-0">
-                    {n.typ === "prubezna" ? "Průběžně" : "Jednorázová"}
+                    {n.typ === "opakovana" ? "Průběžná" : "Jednorázová"}
                   </span>
                 </div>
                 {n.popis_prace && (

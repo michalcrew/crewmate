@@ -1,7 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
-import { useState } from "react"
+import { useActionState, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Pencil } from "lucide-react"
 import { updateNabidka } from "@/lib/actions/nabidky"
-import { TYP_POZICE_OPTIONS } from "@/lib/constants"
+import { TYP_POZICE_OPTIONS, NABIDKA_TYPY, type NabidkaTyp } from "@/lib/constants"
 import { toast } from "sonner"
 
 type Props = {
@@ -26,8 +25,7 @@ type Props = {
     datum_od: string | null
     datum_do: string | null
     pocet_lidi: number | null
-    zverejnena: boolean
-    stav: string
+    publikovano: boolean
     koho_hledame?: string | null
     co_nabizime?: string | null
   }
@@ -35,12 +33,14 @@ type Props = {
 
 export function EditNabidkaDialog({ nabidka }: Props) {
   const [open, setOpen] = useState(false)
+  const typLabel = NABIDKA_TYPY[nabidka.typ as NabidkaTyp]?.label ?? nabidka.typ
+  const isUkoncena = nabidka.typ === "ukoncena"
 
   const [state, formAction, pending] = useActionState(
     async (_prev: { error?: string } | null, formData: FormData) => {
       const result = await updateNabidka(nabidka.id, formData)
       if (result.success) {
-        toast.success("Nabídka upravena")
+        toast.success("Zakázka upravena")
         setOpen(false)
         return null
       }
@@ -48,6 +48,15 @@ export function EditNabidkaDialog({ nabidka }: Props) {
     },
     null
   )
+
+  if (isUkoncena) {
+    return (
+      <Button variant="outline" size="sm" disabled title="Ukončenou zakázku nelze upravovat">
+        <Pencil className="h-4 w-4 mr-1" />
+        Upravit
+      </Button>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -59,7 +68,7 @@ export function EditNabidkaDialog({ nabidka }: Props) {
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Upravit nabídku</DialogTitle>
+          <DialogTitle>Upravit zakázku</DialogTitle>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
@@ -68,11 +77,10 @@ export function EditNabidkaDialog({ nabidka }: Props) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Typ</Label>
-              <select name="typ" defaultValue={nabidka.typ} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                <option value="jednorazova">Jednorázová</option>
-                <option value="prubezna">Průběžná</option>
-              </select>
+              <Label>Typ zakázky</Label>
+              <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground">
+                {typLabel} <span className="ml-2 text-xs">(nelze změnit)</span>
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Typ pozice</Label>
@@ -129,8 +137,8 @@ export function EditNabidkaDialog({ nabidka }: Props) {
             <Textarea name="co_nabizime" defaultValue={nabidka.co_nabizime ?? ""} rows={2} placeholder="Odměna, benefity, zázemí..." />
           </div>
           <div className="flex items-center gap-2">
-            <input type="checkbox" id="en-zverejnena" name="zverejnena" defaultChecked={nabidka.zverejnena} className="h-4 w-4" />
-            <Label htmlFor="en-zverejnena" className="font-normal">Zveřejnit na /prace</Label>
+            <input type="checkbox" id="en-publikovano" name="publikovano" defaultChecked={nabidka.publikovano} className="h-4 w-4" />
+            <Label htmlFor="en-publikovano" className="font-normal">Publikovat na /prace</Label>
           </div>
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
           <div className="flex justify-end gap-2">

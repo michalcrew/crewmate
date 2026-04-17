@@ -8,9 +8,9 @@ import {
 } from "@/components/ui/table"
 import { getNabidky } from "@/lib/actions/nabidky"
 import { NabidkyFilter } from "@/components/nabidky/nabidky-filter"
-import { NABIDKA_TYPY } from "@/lib/constants"
+import { TypBadge } from "@/components/nabidky/typ-badge"
+import { PublishToggle } from "@/components/nabidky/publish-toggle"
 import { PageHeader } from "@/components/shared/page-header"
-import { StatusBadge } from "@/components/shared/status-badge"
 import { EmptyState } from "@/components/shared/empty-state"
 
 export const metadata: Metadata = { title: "Zakázky" }
@@ -23,7 +23,6 @@ export default async function NabidkyPage({
   const params = await searchParams
   const nabidky = await getNabidky({ filtr: params.filtr })
 
-  // Stats
   const totalPipeline = nabidky.reduce((sum, n) => sum + (n.stats?.zajemci ?? 0) + (n.stats?.prijati ?? 0) + (n.stats?.vyreseno ?? 0), 0)
   const totalPrijati = nabidky.reduce((sum, n) => sum + (n.stats?.vyreseno ?? 0), 0)
 
@@ -60,12 +59,11 @@ export default async function NabidkyPage({
                     <TableHead>Město</TableHead>
                     <TableHead>Typ</TableHead>
                     <TableHead className="text-center">Pipeline</TableHead>
-                    <TableHead>Stav</TableHead>
+                    <TableHead className="text-center">Publikovat</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {nabidky.map((n) => {
-                    const typConfig = NABIDKA_TYPY[n.typ as keyof typeof NABIDKA_TYPY]
                     const z = n.stats?.zajemci ?? 0
                     const p = n.stats?.prijati ?? 0
                     const v = n.stats?.vyreseno ?? 0
@@ -80,9 +78,7 @@ export default async function NabidkyPage({
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{n.mesto || n.misto || "—"}</TableCell>
                         <TableCell>
-                          <StatusBadge variant={n.typ === "stala" ? "success" : "info"}>
-                            {typConfig?.label ?? n.typ}
-                          </StatusBadge>
+                          <TypBadge typ={n.typ} />
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-center gap-1 text-xs tabular-nums">
@@ -99,13 +95,10 @@ export default async function NabidkyPage({
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <StatusBadge
-                            variant={n.stav === "aktivni" ? "success" : n.stav === "pozastavena" ? "warning" : "neutral"}
-                            dot
-                          >
-                            {n.stav === "aktivni" ? "Aktivní" : n.stav === "pozastavena" ? "Pozastavená" : "Ukončená"}
-                          </StatusBadge>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center">
+                            <PublishToggle id={n.id} publikovano={n.publikovano} typ={n.typ} />
+                          </div>
                         </TableCell>
                       </TableRow>
                     )

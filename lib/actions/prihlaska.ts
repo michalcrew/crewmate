@@ -44,6 +44,17 @@ export async function submitPrihlaska(formData: FormData) {
   // Use admin client (service role) — public endpoint, no auth
   const supabase = createAdminClient()
 
+  // F-0012 guard: zakázka musí být publikovaná a ne ukončená
+  const { data: nabidka } = await supabase
+    .from("nabidky")
+    .select("id, publikovano, typ")
+    .eq("id", parsed.data.nabidka_id)
+    .single()
+
+  if (!nabidka || !nabidka.publikovano || nabidka.typ === "ukoncena") {
+    return { error: "Tato zakázka již není otevřena pro přihlášky." }
+  }
+
   // Check for existing brigadnik with same email
   const { data: existing } = await supabase
     .from("brigadnici")

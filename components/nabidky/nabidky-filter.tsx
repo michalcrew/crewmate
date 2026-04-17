@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils"
 
 const FILTERS = [
   { value: "vse", label: "Všechny" },
-  { value: "aktivni", label: "Aktivní" },
-  { value: "stala", label: "Stálé" },
+  { value: "jednodenni", label: "Jednodenní" },
+  { value: "opakovana", label: "Opakované" },
   { value: "ukoncena", label: "Ukončené" },
 ] as const
 

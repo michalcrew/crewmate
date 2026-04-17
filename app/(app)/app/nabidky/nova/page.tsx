@@ -1,54 +1,109 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createNabidka } from "@/lib/actions/nabidky"
 import { TYP_POZICE_OPTIONS } from "@/lib/constants"
+import { Calendar, Repeat, ArrowLeft } from "lucide-react"
+
+type Typ = "jednodenni" | "opakovana"
 
 export default function NovaNabidkaPage() {
   const router = useRouter()
+  const [typ, setTyp] = useState<Typ | null>(null)
 
   const [state, formAction, pending] = useActionState(
     async (_prev: { error?: string } | null, formData: FormData) => {
       const result = await createNabidka(formData)
-      if (result.success) {
-        router.push("/app/nabidky")
+      if (result.success && result.id) {
+        router.push(`/app/nabidky/${result.id}`)
         return null
       }
-      return result
+      return result as { error?: string }
     },
     null
   )
 
+  // Step 1: typ selector
+  if (!typ) {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-2xl font-semibold mb-2">Nová zakázka</h1>
+        <p className="text-muted-foreground mb-6">Vyberte typ zakázky, kterou chcete vytvořit:</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <button
+            type="button"
+            onClick={() => setTyp("jednodenni")}
+            className="text-left rounded-xl border-2 border-border hover:border-blue-500 hover:bg-blue-500/5 p-6 transition-all"
+          >
+            <Calendar className="h-8 w-8 text-blue-500 mb-3" />
+            <h2 className="text-lg font-semibold mb-1">Jednodenní</h2>
+            <p className="text-sm text-muted-foreground">
+              Jeden event, jedna akce. Např. &bdquo;Ples Galerie 15.5.2026&ldquo;.
+              Vytvoří se zakázka + akce v jednom kroku.
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTyp("opakovana")}
+            className="text-left rounded-xl border-2 border-border hover:border-green-500 hover:bg-green-500/5 p-6 transition-all"
+          >
+            <Repeat className="h-8 w-8 text-green-500 mb-3" />
+            <h2 className="text-lg font-semibold mb-1">Opakovaná</h2>
+            <p className="text-sm text-muted-foreground">
+              Průběžný nábor s více akcemi. Např. &bdquo;Sasazu &ndash; Duben&ldquo;.
+              Akce přidáte postupně v detailu zakázky.
+            </p>
+          </button>
+        </div>
+        <div className="mt-6">
+          <Button variant="outline" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4 mr-1.5" />
+            Zpět
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Step 2: form (shared shell)
   return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-semibold mb-6">Nová nabídka</h1>
+    <div className="max-w-2xl mx-auto">
+      <div className="flex items-center gap-3 mb-6">
+        <Button variant="ghost" size="icon" onClick={() => setTyp(null)} type="button">
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-semibold">
+            Nová {typ === "jednodenni" ? "jednodenní" : "opakovaná"} zakázka
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {typ === "jednodenni"
+              ? "Vytvoří se zakázka spolu s jednou akcí."
+              : "Akce přidáte později v detailu zakázky."}
+          </p>
+        </div>
+      </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Základní údaje</CardTitle>
+          <CardTitle>Údaje o zakázce</CardTitle>
         </CardHeader>
         <CardContent>
           <form action={formAction} className="space-y-4">
+            <input type="hidden" name="typ" value={typ} />
+
             <div className="space-y-2">
-              <Label htmlFor="nazev">Název nabídky *</Label>
-              <Input id="nazev" name="nazev" placeholder="např. Obsluha šatny — Sasazu" required />
+              <Label htmlFor="nazev">Název zakázky *</Label>
+              <Input id="nazev" name="nazev" placeholder={typ === "jednodenni" ? "např. Ples Galerie 15.5." : "např. Sasazu — Duben"} required />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="typ">Typ</Label>
-                <select name="typ" id="typ" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                  <option value="jednorazova">Jednorázová</option>
-                  <option value="prubezna">Průběžná</option>
-                </select>
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="typ_pozice">Typ pozice</Label>
                 <select name="typ_pozice" id="typ_pozice" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
@@ -58,37 +113,30 @@ export default function NovaNabidkaPage() {
                   ))}
                 </select>
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="klient">Klient</Label>
                 <Input id="klient" name="klient" placeholder="např. SaSaZu Club" />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="misto">Místo</Label>
-                <Input id="misto" name="misto" placeholder="např. Praha 7" />
-              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="misto">Město / lokalita</Label>
+                <Input id="misto" name="misto" placeholder="např. Praha 7" />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="odmena">Odměna</Label>
                 <Input id="odmena" name="odmena" placeholder="např. 180 Kč/hod" />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="pocet_lidi">Počet lidí per směna</Label>
-                <Input id="pocet_lidi" name="pocet_lidi" type="number" min="1" />
-              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="datum_od">Datum od</Label>
+                <Label htmlFor="datum_od">Zakázka od</Label>
                 <Input id="datum_od" name="datum_od" type="date" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="datum_do">Datum do</Label>
+                <Label htmlFor="datum_do">Zakázka do</Label>
                 <Input id="datum_do" name="datum_do" type="date" />
               </div>
             </div>
@@ -113,9 +161,43 @@ export default function NovaNabidkaPage() {
               <Textarea id="co_nabizime" name="co_nabizime" placeholder="Odměna, benefity, zázemí..." rows={2} />
             </div>
 
+            {typ === "jednodenni" && (
+              <Card className="bg-blue-500/5 border-blue-500/20">
+                <CardHeader>
+                  <CardTitle className="text-base">Údaje o akci</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 pt-0">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="akce_datum">Datum akce *</Label>
+                      <Input id="akce_datum" name="akce_datum" type="date" required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="akce_misto">Místo akce</Label>
+                      <Input id="akce_misto" name="akce_misto" placeholder="např. SaSaZu Praha 7" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="akce_cas_od">Čas od</Label>
+                      <Input id="akce_cas_od" name="akce_cas_od" type="time" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="akce_cas_do">Čas do</Label>
+                      <Input id="akce_cas_do" name="akce_cas_do" type="time" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="akce_pocet_lidi">Počet lidí (kapacita akce)</Label>
+                    <Input id="akce_pocet_lidi" name="akce_pocet_lidi" type="number" min="1" placeholder="např. 10" />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="flex items-center gap-2">
-              <input type="checkbox" id="zverejnena" name="zverejnena" className="h-4 w-4 rounded border-input" />
-              <Label htmlFor="zverejnena" className="font-normal">Zveřejnit na kariérní stránce (/prace)</Label>
+              <input type="checkbox" id="publikovano" name="publikovano" defaultChecked className="h-4 w-4 rounded border-input" />
+              <Label htmlFor="publikovano" className="font-normal">Publikovat na kariérní stránce (/prace)</Label>
             </div>
 
             {state?.error && (
@@ -124,10 +206,10 @@ export default function NovaNabidkaPage() {
 
             <div className="flex gap-3 pt-2">
               <Button type="submit" disabled={pending}>
-                {pending ? "Ukládám..." : "Vytvořit nabídku"}
+                {pending ? "Ukládám..." : typ === "jednodenni" ? "Vytvořit zakázku a akci" : "Vytvořit zakázku"}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>
-                Zrušit
+              <Button type="button" variant="outline" onClick={() => setTyp(null)}>
+                Změnit typ
               </Button>
             </div>
           </form>

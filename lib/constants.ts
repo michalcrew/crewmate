@@ -39,10 +39,22 @@ export const PIPELINE_STATES = {
   odmitnuty: { label: "Odmítnutý", color: "bg-red-500/10 text-red-500" },
 } as const
 
+// F-0012: typ zakázek
+// Interní labely (používá se v /app)
 export const NABIDKA_TYPY = {
-  aktivni: { label: "Aktivní", color: "bg-blue-500/10 text-blue-500 border-blue-500/20", desc: "Jednorázová akce" },
-  stala: { label: "Stálá", color: "bg-green-500/10 text-green-500 border-green-500/20", desc: "Průběžný nábor" },
+  jednodenni: { label: "Jednodenní", color: "bg-blue-500/10 text-blue-500 border-blue-500/20", desc: "Jednorázová akce (1 zakázka = 1 akce)" },
+  opakovana: { label: "Opakovaná", color: "bg-green-500/10 text-green-500 border-green-500/20", desc: "Průběžný nábor (1 zakázka = N akcí)" },
+  ukoncena: { label: "Ukončená", color: "bg-gray-500/10 text-gray-500 border-gray-500/20", desc: "Archivováno, read-only" },
 } as const
+
+// Veřejné labely (používá se na /prace)
+export const NABIDKA_TYPY_PUBLIC = {
+  jednodenni: "Jednorázová",
+  opakovana: "Průběžná",
+  ukoncena: "Ukončená",
+} as const
+
+export type NabidkaTyp = keyof typeof NABIDKA_TYPY
 
 export const DPP_STATES = {
   zadny: { label: "—", color: "text-muted-foreground" },
