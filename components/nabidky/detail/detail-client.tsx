@@ -253,11 +253,14 @@ function BrigadnikCardInner({ entry, isDragging }: { entry: PipelineEntry; isDra
     <Card className={isDragging ? "shadow-lg ring-2 ring-primary" : ""}>
       <CardContent className="p-3 space-y-2">
         <div>
+          {/* Link nesmí volat stopPropagation na pointer eventech — blokovalo by drag listener na parent divu.
+              Místo toho necháváme drag activationConstraint (distance: 8px) rozhodovat: krátký klik = navigace,
+              drag 8+ px = přesun kanbanu. */}
           <Link
             href={`/app/brigadnici/${b.id}`}
             className="font-medium text-sm hover:underline"
-            onClick={(e) => isDragging && e.preventDefault()}
-            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { if (isDragging) e.preventDefault() }}
+            draggable={false}
           >
             {b.prijmeni} {b.jmeno}
           </Link>
