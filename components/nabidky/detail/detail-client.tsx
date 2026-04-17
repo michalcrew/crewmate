@@ -19,7 +19,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Calendar, MapPin, Users, Copy, Send, Trash2, X } from "lucide-react"
+import { Calendar, MapPin, Users, Copy, Send, Trash2, X, ClipboardList } from "lucide-react"
 import { PIPELINE_STATES } from "@/lib/constants"
 import { updatePipelineStav } from "@/lib/actions/pipeline"
 import { assignBrigadnikToAkce, unassignBrigadnikFromAkce, odeslatBriefing } from "@/lib/actions/akce"
@@ -345,10 +345,8 @@ function AkceCard({ akce, readOnly }: { akce: AkceWithPrirazeni; readOnly: boole
   }
 
   return (
-    <Card
-      ref={setNodeRef}
-      className={`transition-colors ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}
-    >
+    <div ref={setNodeRef} className={`rounded-xl transition-colors ${isOver ? "ring-2 ring-primary bg-primary/5" : ""}`}>
+    <Card>
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -404,10 +402,18 @@ function AkceCard({ akce, readOnly }: { akce: AkceWithPrirazeni; readOnly: boole
 
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
           {pinUrl && (
-            <Button variant="outline" size="sm" className="text-xs h-7" onClick={copyPinLink}>
-              <Copy className="h-3 w-3 mr-1" />
-              {copied ? "Zkopírováno!" : `PIN ${akce.pin_kod}`}
-            </Button>
+            <>
+              <Link href={`/dochazka/${akce.id}`} target="_blank" rel="noopener">
+                <Button variant="outline" size="sm" className="text-xs h-7">
+                  <ClipboardList className="h-3 w-3 mr-1" />
+                  Docházka
+                </Button>
+              </Link>
+              <Button variant="outline" size="sm" className="text-xs h-7" onClick={copyPinLink}>
+                <Copy className="h-3 w-3 mr-1" />
+                {copied ? "Zkopírováno!" : `PIN ${akce.pin_kod}`}
+              </Button>
+            </>
           )}
           {!readOnly && prirazeniCount > 0 && (
             <BriefingButton
@@ -419,6 +425,7 @@ function AkceCard({ akce, readOnly }: { akce: AkceWithPrirazeni; readOnly: boole
         </div>
       </CardContent>
     </Card>
+    </div>
   )
 }
 
