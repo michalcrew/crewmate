@@ -288,13 +288,13 @@ export async function updateNabidka(id: string, formData: FormData) {
 
   const raw = Object.fromEntries(formData.entries())
 
-  // Strip typ from patch regardless of client input (belt-and-suspenders with Zod .strict)
+  // Split akce fields (handled separately for jednodenni), strip typ (immutable)
   const {
     typ: _discardedTyp,
-    akce_datum: _ad, akce_misto: _am, akce_cas_od: _aco, akce_cas_do: _acd, akce_pocet_lidi: _apl,
+    akce_datum, akce_misto, akce_cas_od, akce_cas_do, akce_pocet_lidi,
     ...rest
   } = raw
-  void _discardedTyp; void _ad; void _am; void _aco; void _acd; void _apl
+  void _discardedTyp
 
   const normalized = {
     ...rest,
@@ -332,14 +332,55 @@ export async function updateNabidka(id: string, formData: FormData) {
 
   if (error) return { error: error.message }
 
+  // Pro jednodenni: upsert akce (1:1 vazba zakázka ↔ akce)
+  let akceMessage = ""
+  if (current.typ === "jednodenni") {
+    const datumStr = String(akce_datum ?? "").trim()
+    if (datumStr) {
+      const akcePayload = {
+        nazev: parsed.data.nazev ?? current.nazev,
+        datum: datumStr,
+        misto: String(akce_misto ?? parsed.data.misto ?? current.misto ?? "").trim() || null,
+        cas_od: String(akce_cas_od ?? "").trim() || null,
+        cas_do: String(akce_cas_do ?? "").trim() || null,
+        klient: parsed.data.klient ?? current.klient ?? null,
+        pocet_lidi: akce_pocet_lidi ? Number(akce_pocet_lidi) : parsed.data.pocet_lidi ?? null,
+      }
+
+      // Existing akce for this nabidka?
+      const { data: existingAkce } = await supabase
+        .from("akce")
+        .select("id")
+        .eq("nabidka_id", id)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingAkce) {
+        const { error: updErr } = await supabase
+          .from("akce")
+          .update(akcePayload)
+          .eq("id", existingAkce.id)
+        if (updErr) return { error: `Zakázka uložena, ale akce se nepodařilo aktualizovat: ${updErr.message}` }
+        akceMessage = " + akce aktualizována"
+      } else {
+        const { error: insErr } = await supabase
+          .from("akce")
+          .insert({ ...akcePayload, nabidka_id: id, pin_kod: generatePin() })
+        if (insErr) return { error: `Zakázka uložena, ale akce se nepodařilo vytvořit: ${insErr.message}` }
+        akceMessage = " + akce vytvořena"
+      }
+    }
+  }
+
   await insertAudit(
     "nabidka_zmena",
-    `Upravena zakázka "${current.nazev}"`,
+    `Upravena zakázka "${current.nazev}"${akceMessage}`,
     { nabidka_id: id }
   )
 
   revalidatePath(`/app/nabidky/${id}`)
   revalidatePath("/app/nabidky")
+  revalidatePath("/app/akce")
   revalidatePath("/prace")
   if (current.slug) revalidatePath(`/prace/${current.slug}`)
   return { success: true }

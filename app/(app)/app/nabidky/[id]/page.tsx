@@ -157,7 +157,21 @@ export default async function NabidkaDetailPage({
             <span className="text-muted-foreground">Publikováno:</span>
             <PublishToggle id={nabidka.id} publikovano={nabidka.publikovano} typ={nabidka.typ} />
           </div>
-          <EditNabidkaDialog nabidka={nabidka} />
+          <EditNabidkaDialog
+            nabidka={nabidka}
+            akce={
+              nabidka.typ === "jednodenni" && akce.length > 0 && akce[0]
+                ? {
+                    id: akce[0].id,
+                    datum: akce[0].datum,
+                    misto: akce[0].misto,
+                    cas_od: akce[0].cas_od,
+                    cas_do: akce[0].cas_do,
+                    pocet_lidi: akce[0].pocet_lidi,
+                  }
+                : null
+            }
+          />
           {isOpakovana && <UkoncitButton id={nabidka.id} nazev={nabidka.nazev} />}
         </div>
       </div>
@@ -166,8 +180,9 @@ export default async function NabidkaDetailPage({
       {!isUkoncena && (
         <div className="flex flex-wrap items-center gap-2 mb-5">
           <AddToPipelineDialog nabidkaId={id} brigadnici={availableBrigadnici} />
-          {/* Opakovaná: libovolný počet akcí. Jednodenní: max 1 akce (server guard vynutí). */}
-          {(isOpakovana || (nabidka.typ === "jednodenni" && akce.length === 0)) && (
+          {/* Opakovaná: libovolný počet akcí přidáváme tady.
+              Jednodenní: 1 akce se upsertuje v nastavení zakázky (datum akce). */}
+          {isOpakovana && (
             <AddAkceDialog
               nabidkaId={id}
               defaultNazev={nabidka.nazev}
