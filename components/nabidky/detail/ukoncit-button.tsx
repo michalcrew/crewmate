@@ -7,7 +7,17 @@ import { Archive } from "lucide-react"
 import { ukoncitNabidku } from "@/lib/actions/nabidky"
 import { toast } from "sonner"
 
-export function UkoncitButton({ id, nazev }: { id: string; nazev: string }) {
+type Variant = "full" | "icon"
+
+export function UkoncitButton({
+  id,
+  nazev,
+  variant = "full",
+}: {
+  id: string
+  nazev: string
+  variant?: Variant
+}) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -26,10 +36,17 @@ export function UkoncitButton({ id, nazev }: { id: string; nazev: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger>
-        <Button variant="outline" size="sm">
-          <Archive className="h-4 w-4 mr-1.5" />
-          Ukončit zakázku
-        </Button>
+        {variant === "icon" ? (
+          <Button variant="ghost" size="icon" title={`Ukončit zakázku "${nazev}"`}>
+            <Archive className="h-4 w-4" />
+            <span className="sr-only">Ukončit zakázku</span>
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm">
+            <Archive className="h-4 w-4 mr-1.5" />
+            Ukončit zakázku
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>

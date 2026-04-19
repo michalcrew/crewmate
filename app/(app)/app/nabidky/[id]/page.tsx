@@ -172,7 +172,7 @@ export default async function NabidkaDetailPage({
                 : null
             }
           />
-          {isOpakovana && <UkoncitButton id={nabidka.id} nazev={nabidka.nazev} />}
+          {!isUkoncena && <UkoncitButton id={nabidka.id} nazev={nabidka.nazev} />}
         </div>
       </div>
 
