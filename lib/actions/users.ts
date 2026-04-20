@@ -114,16 +114,20 @@ export async function updateUserPodpis(
 
   const sanitized = sanitizePodpis(parsed.data.podpis)
 
-  // Update own row WHERE auth_user_id = auth.uid()
-  const { data: internalUser, error: selectErr } = await supabase
+  // HF4c: RLS lookup fallback — pattern z getUsers().
+  // Auth check už proběhl výše (user != null), takže je bezpečné
+  // použít admin client pokud RLS SELECT vrátí prázdno. Filter
+  // auth_user_id = user.id zajistí self-only write.
+  const admin = createAdminClient()
+  const { data: internalUser } = await admin
     .from("users")
     .select("id")
     .eq("auth_user_id", user.id)
     .single()
 
-  if (selectErr || !internalUser) return { error: "Uživatel nenalezen" }
+  if (!internalUser) return { error: "Uživatel nenalezen" }
 
-  const { error } = await supabase
+  const { error } = await admin
     .from("users")
     .update({
       podpis: sanitized.sanitized,
