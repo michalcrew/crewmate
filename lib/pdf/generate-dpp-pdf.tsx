@@ -1,35 +1,42 @@
 import React from "react"
+import fs from "node:fs"
+import path from "node:path"
 import { Document, Page, Text, View, StyleSheet, renderToBuffer, Font } from "@react-pdf/renderer"
 
 // ============================================================
-// HF4b — Font s plnou podporou české diakritiky (Latin Extended-A)
+// HF4d — Font load z filesystemu (Buffer) místo HTTP
 // ============================================================
-// Noto Sans TTF soubory hostované lokálně (public/fonts/).
-// Původní Google Fonts CDN URLs byly vymyšlené a vracely 404 → PDF
-// render padal. Lokální hosting = žádná CDN dependency, předvídatelná
-// latence.
+// HTTP fetch fontu z vlastního URL při každém render → 503 timeout
+// na Vercel (fetch self + PDF render + Gmail API send > 10s Hobby limit).
+// Fix: readFileSync v module scope, cacheuje se na warm lambdu,
+// Font.register se provede jen jednou per container.
 //
-// Absolutní URL via VERCEL_URL / NEXT_PUBLIC_APP_URL — @react-pdf/renderer
-// na server-side vyžaduje absolutní URL pro HTTP fetch fontu.
-const FONT_BASE_URL =
-  process.env.NEXT_PUBLIC_APP_URL ||
-  (process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000")
+// fs.readFileSync je safe pro Next.js serverless runtime; public/
+// soubory jsou součástí bundle (tracing zahrne `fs` explicit import).
+function loadFontBuffer(filename: string): Buffer {
+  const p = path.join(process.cwd(), "public", "fonts", filename)
+  return fs.readFileSync(p)
+}
 
-Font.register({
-  family: "NotoSans",
-  fonts: [
-    {
-      src: `${FONT_BASE_URL}/fonts/NotoSans-Regular.ttf`,
-      fontWeight: "normal",
-    },
-    {
-      src: `${FONT_BASE_URL}/fonts/NotoSans-Bold.ttf`,
-      fontWeight: "bold",
-    },
-  ],
-})
+let fontRegistered = false
+function ensureFontRegistered() {
+  if (fontRegistered) return
+  try {
+    Font.register({
+      family: "NotoSans",
+      fonts: [
+        { src: loadFontBuffer("NotoSans-Regular.ttf") as unknown as string, fontWeight: "normal" },
+        { src: loadFontBuffer("NotoSans-Bold.ttf") as unknown as string, fontWeight: "bold" },
+      ],
+    })
+    fontRegistered = true
+  } catch (err) {
+    console.error("[F-0013 HF4d] Font load failed, fallback na Helvetica:", err)
+    // nebránit renderu — PDF vygeneruje s default fontem
+    // (diakritika opět prázdná, ale alespoň nepadá serverless)
+    fontRegistered = true // prevent retry loop
+  }
+}
 
 const styles = StyleSheet.create({
   page: { padding: 40, fontSize: 10, fontFamily: "NotoSans", lineHeight: 1.45 },
@@ -356,6 +363,7 @@ function DppDocument({ data }: { data: DppData }) {
 }
 
 export async function generateDppPdf(data: DppData): Promise<Buffer> {
+  ensureFontRegistered()
   const buffer = await renderToBuffer(<DppDocument data={data} />)
   return Buffer.from(buffer)
 }

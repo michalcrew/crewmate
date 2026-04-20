@@ -1,5 +1,10 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
+
+// HF4d: Server Actions z této stránky (send DPP/prohlášení) renderují PDF
+// s fontem — dá se přes 10s default timeout na Vercel Hobby. Pro Fluid Compute
+// (nový free tier od 2025) max 300s, Pro plan 800s.
+export const maxDuration = 60
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
