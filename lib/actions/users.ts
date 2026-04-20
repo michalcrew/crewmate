@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { z } from "zod"
+import { sanitizePodpis } from "@/lib/utils/podpis-sanitize"
+import { updateUserPodpisSchema } from "@/lib/schemas/dotaznik"
 
 export async function getUsers() {
   const supabase = await createClient()
@@ -90,6 +92,77 @@ export async function createUser(formData: FormData) {
 
   revalidatePath("/app/nastaveni")
   return { success: true }
+}
+
+/**
+ * F-0013 US-1E-1 + ADR-1E: Updatuje `users.podpis` pro aktuálně
+ * přihlášeného uživatele. Sanitizace přes `sanitize-html` allowlist,
+ * max 1000 znaků (Zod). Audit log pokud sanitizace něco stripla (XSS attempt).
+ */
+export async function updateUserPodpis(
+  podpis: string
+): Promise<{ success: true; stripped?: number } | { error: string }> {
+  const parsed = updateUserPodpisSchema.safeParse({ podpis })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatný podpis" }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const sanitized = sanitizePodpis(parsed.data.podpis)
+
+  // Update own row WHERE auth_user_id = auth.uid()
+  const { data: internalUser, error: selectErr } = await supabase
+    .from("users")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single()
+
+  if (selectErr || !internalUser) return { error: "Uživatel nenalezen" }
+
+  const { error } = await supabase
+    .from("users")
+    .update({ podpis: sanitized.sanitized })
+    .eq("id", internalUser.id)
+
+  if (error) return { error: error.message }
+
+  if (sanitized.hadInjection) {
+    const admin = createAdminClient()
+    await admin.from("historie").insert({
+      user_id: internalUser.id,
+      typ: "podpis_sanitized",
+      popis: `Podpis sanitizován — stripnuto ${sanitized.stripped} znaků`,
+      metadata: { stripped: sanitized.stripped, user_id: internalUser.id },
+    })
+  }
+
+  revalidatePath("/app/nastaveni")
+  return { success: true, stripped: sanitized.stripped }
+}
+
+/**
+ * F-0013: Vrátí email podpis uživatele; pokud je NULL/prázdný,
+ * fallback = `"{jmeno} {prijmeni}, tým Crewmate"`.
+ *
+ * Volaný v F-0014 v `sendEmailAction` — podpis je fetchnut v okamžiku
+ * odeslání emailu (edge case 8 — změna podpisu uprostřed compose se projeví).
+ */
+export async function getUserPodpis(userId: string): Promise<string> {
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from("users")
+    .select("jmeno, prijmeni, podpis")
+    .eq("id", userId)
+    .single()
+
+  if (!data) return "Tým Crewmate"
+
+  const podpis = (data.podpis ?? "").trim()
+  if (podpis.length > 0) return podpis
+  return `${data.jmeno} ${data.prijmeni}, tým Crewmate`
 }
 
 export async function toggleUserActive(userId: string, aktivni: boolean) {

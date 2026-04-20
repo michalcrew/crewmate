@@ -69,9 +69,20 @@ export default async function BrigadnikDetailPage({
           </div>
         )}
         <div>
-          <h1 className="text-2xl font-semibold">
-            {brigadnik.jmeno} {brigadnik.prijmeni}
-          </h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-semibold">
+              {brigadnik.jmeno} {brigadnik.prijmeni}
+            </h1>
+            {brigadnik.typ_brigadnika === "osvc" && (
+              <Badge
+                variant="outline"
+                className="bg-purple-500/10 text-purple-600 border-purple-500/20 text-xs"
+                aria-label="OSVČ fakturant"
+              >
+                Fakturant (OSVČ)
+              </Badge>
+            )}
+          </div>
           <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
             <span>{brigadnik.email}</span>
             <span>|</span>
@@ -171,24 +182,32 @@ export default async function BrigadnikDetailPage({
             <CardContent>
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
                 {[
-                  ["Datum narození", brigadnik.datum_narozeni],
-                  ["Místo narození", brigadnik.misto_narozeni],
-                  ["Rodné číslo", brigadnik.rodne_cislo ? "••••/••••" : null],
-                  ["Rodné jméno", brigadnik.rodne_jmeno],
-                  ["Rodné příjmení", brigadnik.rodne_prijmeni],
-                  ["Číslo OP", brigadnik.cislo_op ? "••••••••" : null],
-                  ["Ulice a č.p.", brigadnik.ulice_cp],
-                  ["PSČ", brigadnik.psc],
-                  ["Město", brigadnik.mesto_bydliste],
-                  ["Země", brigadnik.zeme],
-                  ["Adresa (celá)", brigadnik.adresa],
-                  ["Korespondenční adresa", brigadnik.korespondencni_adresa],
-                  ["Zdravotní pojišťovna", brigadnik.zdravotni_pojistovna],
-                  ["Číslo účtu", brigadnik.cislo_uctu ? `${brigadnik.cislo_uctu}/${brigadnik.kod_banky}` : null],
-                  ["Vzdělání", brigadnik.vzdelani],
-                  ["Student", brigadnik.student != null ? (brigadnik.student ? "Ano" : "Ne") : null],
-                  ["Škola", brigadnik.nazev_skoly],
-                  ["Sleva jinde", brigadnik.uplatnuje_slevu_jinde != null ? (brigadnik.uplatnuje_slevu_jinde ? "Ano" : "Ne") : null],
+                  ["Typ", brigadnik.typ_brigadnika === "osvc" ? "OSVČ (fakturace)" : "Brigádník (DPP)"],
+                  ...(brigadnik.typ_brigadnika === "osvc"
+                    ? [
+                        ["IČO", brigadnik.osvc_ico],
+                        ["DIČ", brigadnik.osvc_dic ? "••••••••" : null],
+                        ["Fakturační adresa", brigadnik.osvc_fakturacni_adresa],
+                      ]
+                    : [
+                        ["Datum narození", brigadnik.datum_narozeni],
+                        ["Místo narození", brigadnik.misto_narozeni],
+                        ["Rodné číslo", brigadnik.rodne_cislo ? "••••/••••" : null],
+                        ["Rodné jméno", brigadnik.rodne_jmeno],
+                        ["Rodné příjmení", brigadnik.rodne_prijmeni],
+                        ["Číslo OP", brigadnik.cislo_op ? "••••••••" : null],
+                        ["Ulice a č.p.", brigadnik.ulice_cp],
+                        ["PSČ", brigadnik.psc],
+                        ["Město", brigadnik.mesto_bydliste],
+                        ["Země", brigadnik.zeme],
+                        ["Národnost", brigadnik.narodnost],
+                        ["Adresa (celá)", brigadnik.adresa],
+                        ["Korespondenční adresa", brigadnik.korespondencni_adresa],
+                        ["Zdravotní pojišťovna", brigadnik.zdravotni_pojistovna],
+                        ["Číslo účtu", brigadnik.cislo_uctu ? `${brigadnik.cislo_uctu}/${brigadnik.kod_banky}` : null],
+                        ["Vzdělání", brigadnik.vzdelani],
+                        ["Růžové prohlášení (chce)", brigadnik.chce_ruzove_prohlaseni != null ? (brigadnik.chce_ruzove_prohlaseni ? "Ano" : "Ne") : null],
+                      ]),
                 ].map(([label, value]) => (
                   <div key={label as string}>
                     <dt className="text-muted-foreground">{label}</dt>
@@ -246,41 +265,44 @@ export default async function BrigadnikDetailPage({
         </TabsContent>
 
         <TabsContent value="smluvni" className="mt-4 space-y-4">
-          {brigadnik.dotaznik_vyplnen && (
+          {brigadnik.dotaznik_vyplnen && brigadnik.typ_brigadnika !== "osvc" && (
             <Card>
-              <CardHeader><CardTitle>Akce pro aktuální měsíc</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Akce pro aktuální rok</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap gap-2">
-                  <GenerateDppButton brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} />
-                  <GenerateProhlaseniButton brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} />
-                  <SendDppButton brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} />
+                  <GenerateDppButton brigadnikId={brigadnik.id} rok={new Date().getFullYear()} />
+                  <GenerateProhlaseniButton brigadnikId={brigadnik.id} rok={new Date().getFullYear()} />
+                  <SendDppButton brigadnikId={brigadnik.id} rok={new Date().getFullYear()} />
                 </div>
-                <UploadPodpisForm brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} typ="dpp_podpis" label="Podepsaná DPP" />
-                <UploadPodpisForm brigadnikId={brigadnik.id} mesic={new Date().toISOString().slice(0, 7)} typ="prohlaseni_podpis" label="Podepsané prohlášení" />
+                <UploadPodpisForm brigadnikId={brigadnik.id} rok={new Date().getFullYear()} typ="dpp_podpis" label="Podepsaná DPP" />
+                <UploadPodpisForm brigadnikId={brigadnik.id} rok={new Date().getFullYear()} typ="prohlaseni_podpis" label="Podepsané prohlášení" />
               </CardContent>
             </Card>
           )}
 
           <Card>
-            <CardHeader><CardTitle>Smluvní stav per měsíc</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Smluvní stav per rok</CardTitle></CardHeader>
             <CardContent>
               {smluvniStav.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Žádné záznamy. Vygenerujte DPP výše.</p>
+                <p className="text-sm text-muted-foreground">
+                  {brigadnik.typ_brigadnika === "osvc"
+                    ? "OSVČ nemá DPP ani prohlášení."
+                    : "Žádné záznamy. Vygenerujte DPP výše."}
+                </p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Měsíc</TableHead>
+                      <TableHead>Rok</TableHead>
                       <TableHead>DPP</TableHead>
                       <TableHead>Prohlášení</TableHead>
+                      <TableHead>Platnost do</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {smluvniStav.map((s) => (
                       <TableRow key={s.id}>
-                        <TableCell>
-                          {new Date(s.mesic).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })}
-                        </TableCell>
+                        <TableCell className="tabular-nums font-medium">{s.rok}</TableCell>
                         <TableCell>
                           <span className={DPP_STATES[s.dpp_stav as keyof typeof DPP_STATES]?.color ?? ""}>
                             {DPP_STATES[s.dpp_stav as keyof typeof DPP_STATES]?.label ?? s.dpp_stav}
@@ -290,6 +312,11 @@ export default async function BrigadnikDetailPage({
                           <span className={DPP_STATES[s.prohlaseni_stav as keyof typeof DPP_STATES]?.color ?? ""}>
                             {DPP_STATES[s.prohlaseni_stav as keyof typeof DPP_STATES]?.label ?? s.prohlaseni_stav}
                           </span>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {s.platnost_do
+                            ? new Date(s.platnost_do).toLocaleDateString("cs-CZ")
+                            : "—"}
                         </TableCell>
                       </TableRow>
                     ))}

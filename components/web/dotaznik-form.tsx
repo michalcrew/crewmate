@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { CheckCircle } from "lucide-react"
 import { submitDotaznik } from "@/lib/actions/formular"
 import { ZDRAVOTNI_POJISTOVNY, VZDELANI_OPTIONS } from "@/lib/constants"
+import { NARODNOSTI } from "@/lib/schemas/dotaznik"
 
 type Props = {
   token: string
@@ -16,6 +17,7 @@ type Props = {
 
 export function DotaznikForm({ token, defaultValues }: Props) {
   const [zpJina, setZpJina] = useState(false)
+  const [isOsvc, setIsOsvc] = useState(false)
 
   const [state, formAction, pending] = useActionState(
     async (_prev: { error?: string; success?: boolean } | null, formData: FormData) => {
@@ -30,7 +32,7 @@ export function DotaznikForm({ token, defaultValues }: Props) {
         <CardContent className="py-12 text-center">
           <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold mb-2">Údaje uloženy!</h2>
-          <p className="text-muted-foreground">Děkujeme za vyplnění. Nyní můžeme připravit DPP.</p>
+          <p className="text-muted-foreground">Děkujeme za vyplnění. Nyní můžeme připravit dokumenty.</p>
         </CardContent>
       </Card>
     )
@@ -41,8 +43,30 @@ export function DotaznikForm({ token, defaultValues }: Props) {
       <CardContent className="pt-6">
         <form action={formAction} className="space-y-5">
           <input type="hidden" name="token" value={token} />
+          <input type="hidden" name="typ_brigadnika" value={isOsvc ? "osvc" : "brigadnik"} />
 
-          {/* Jméno + Příjmení (z přihlášky, ale editovatelné) */}
+          {/* F-0013: první ovládací prvek — OSVČ toggle */}
+          <div className="flex items-start gap-2 p-3 border rounded-lg bg-muted/20">
+            <input
+              type="checkbox"
+              id="is_osvc"
+              checked={isOsvc}
+              onChange={(e) => setIsOsvc(e.target.checked)}
+              className="h-4 w-4 mt-0.5"
+            />
+            <div>
+              <Label htmlFor="is_osvc" className="font-medium cursor-pointer">
+                Jsem OSVČ a chci fakturovat (ne DPP)
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isOsvc
+                  ? "Stačí doplnit IČO, DIČ a fakturační adresu."
+                  : "Nezaškrtávejte, pokud pracujete na Dohodu o provedení práce (DPP)."}
+              </p>
+            </div>
+          </div>
+
+          {/* Jméno + Příjmení */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="jmeno">Jméno *</Label>
@@ -54,140 +78,173 @@ export function DotaznikForm({ token, defaultValues }: Props) {
             </div>
           </div>
 
-          {/* Telefon + Email (z přihlášky) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="telefon">Telefon *</Label>
-              <Input id="telefon" name="telefon" defaultValue={defaultValues.telefon} required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="datum_narozeni">Datum narození *</Label>
-              <Input id="datum_narozeni" name="datum_narozeni" type="date" required />
-            </div>
+          {/* Telefon (společné) */}
+          <div className="space-y-2">
+            <Label htmlFor="telefon">Telefon *</Label>
+            <Input id="telefon" name="telefon" defaultValue={defaultValues.telefon} required />
           </div>
 
-          {/* RČ + Místo narození */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="rodne_cislo">Rodné číslo *</Label>
-              <Input id="rodne_cislo" name="rodne_cislo" placeholder="000000/0000" required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="misto_narozeni">Místo narození *</Label>
-              <Input id="misto_narozeni" name="misto_narozeni" required />
-            </div>
-          </div>
-
-          {/* Rodné jméno + příjmení (nepovinné) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="rodne_jmeno">Rodné jméno <span className="text-muted-foreground text-xs">(jen pokud se liší)</span></Label>
-              <Input id="rodne_jmeno" name="rodne_jmeno" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="rodne_prijmeni">Rodné příjmení <span className="text-muted-foreground text-xs">(jen pokud se liší)</span></Label>
-              <Input id="rodne_prijmeni" name="rodne_prijmeni" />
-            </div>
-          </div>
-
-          {/* Trvalé bydliště — split */}
-          <fieldset className="border border-input rounded-lg p-4 space-y-3">
-            <legend className="text-sm font-semibold px-2">Trvalé bydliště *</legend>
-            <div className="space-y-2">
-              <Label htmlFor="ulice_cp">Ulice a číslo popisné *</Label>
-              <Input id="ulice_cp" name="ulice_cp" placeholder="Revoluční 1403/28" required />
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {isOsvc ? (
+            // -------- OSVČ branch --------
+            <>
               <div className="space-y-2">
-                <Label htmlFor="psc">PSČ *</Label>
-                <Input id="psc" name="psc" placeholder="110 00" required />
+                <Label htmlFor="osvc_ico">IČO *</Label>
+                <Input id="osvc_ico" name="osvc_ico" placeholder="12345678" required pattern="\d{7,12}" />
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="mesto_bydliste">Město *</Label>
-                <Input id="mesto_bydliste" name="mesto_bydliste" placeholder="Praha" required />
+                <Label htmlFor="osvc_dic">DIČ (pokud jsi plátce DPH)</Label>
+                <Input id="osvc_dic" name="osvc_dic" placeholder="CZ12345678" pattern="CZ\d{8,10}" />
               </div>
-              <div className="space-y-2 col-span-2 sm:col-span-1">
-                <Label htmlFor="zeme">Země *</Label>
-                <Input id="zeme" name="zeme" defaultValue="Česká republika" required />
+
+              <div className="space-y-2">
+                <Label htmlFor="osvc_fakturacni_adresa">Fakturační adresa *</Label>
+                <Input
+                  id="osvc_fakturacni_adresa"
+                  name="osvc_fakturacni_adresa"
+                  placeholder="Ulice, č.p., PSČ, město"
+                  required
+                  minLength={5}
+                />
               </div>
-            </div>
-          </fieldset>
-
-          {/* Korespondenční adresa */}
-          <div className="space-y-2">
-            <Label htmlFor="korespondencni_adresa">
-              Korespondenční adresa <span className="text-muted-foreground text-xs">(jen pokud se liší od trvalého bydliště)</span>
-            </Label>
-            <Input id="korespondencni_adresa" name="korespondencni_adresa" placeholder="Ulice, č.p., PSČ a město" />
-          </div>
-
-          {/* OP + Bankovní účet */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="cislo_op">Číslo OP či jiného dokladu *</Label>
-              <Input id="cislo_op" name="cislo_op" required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="cislo_uctu">Číslo bankovního účtu *</Label>
-              <Input id="cislo_uctu" name="cislo_uctu" required />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="kod_banky">Kód banky *</Label>
-            <Input id="kod_banky" name="kod_banky" className="max-w-32" required />
-          </div>
-
-          {/* Zdravotní pojišťovna */}
-          <div className="space-y-2">
-            <Label htmlFor="zdravotni_pojistovna">Zdravotní pojišťovna *</Label>
-            <select
-              id="zdravotni_pojistovna"
-              name="zdravotni_pojistovna"
-              required
-              onChange={(e) => setZpJina(e.target.value === "jina")}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="">— vyberte —</option>
-              {ZDRAVOTNI_POJISTOVNY.map((zp) => (
-                <option key={zp.kod} value={zp.kod}>{zp.kod === "jina" ? zp.nazev : `${zp.kod} — ${zp.nazev}`}</option>
-              ))}
-            </select>
-            {zpJina && (
-              <div className="space-y-1 mt-2">
-                <Label htmlFor="zdravotni_pojistovna_jina">Název pojišťovny + kód *</Label>
-                <Input id="zdravotni_pojistovna_jina" name="zdravotni_pojistovna_jina" placeholder="Název a kód pojišťovny" required />
+            </>
+          ) : (
+            // -------- Brigadnik branch --------
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="datum_narozeni">Datum narození *</Label>
+                <Input id="datum_narozeni" name="datum_narozeni" type="date" required />
               </div>
-            )}
-          </div>
 
-          {/* Vzdělání */}
-          <div className="space-y-2">
-            <Label htmlFor="vzdelani">Nejvyšší dokončené vzdělání *</Label>
-            <select id="vzdelani" name="vzdelani" required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-              <option value="">— vyberte —</option>
-              {VZDELANI_OPTIONS.map((v) => (
-                <option key={v.value} value={v.value}>{v.label}</option>
-              ))}
-            </select>
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="rodne_cislo">Rodné číslo *</Label>
+                  <Input id="rodne_cislo" name="rodne_cislo" placeholder="000000/0000" required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="misto_narozeni">Místo narození *</Label>
+                  <Input id="misto_narozeni" name="misto_narozeni" required />
+                </div>
+              </div>
 
-          {/* Student */}
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="student" name="student" className="h-4 w-4" />
-            <Label htmlFor="student" className="font-normal">Jsem student</Label>
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="rodne_jmeno">Rodné jméno <span className="text-muted-foreground text-xs">(jen pokud se liší)</span></Label>
+                  <Input id="rodne_jmeno" name="rodne_jmeno" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="rodne_prijmeni">Rodné příjmení <span className="text-muted-foreground text-xs">(jen pokud se liší)</span></Label>
+                  <Input id="rodne_prijmeni" name="rodne_prijmeni" />
+                </div>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="nazev_skoly">Název školy (pokud student)</Label>
-            <Input id="nazev_skoly" name="nazev_skoly" />
-          </div>
+              {/* F-0013: Národnost */}
+              <div className="space-y-2">
+                <Label htmlFor="narodnost">Národnost *</Label>
+                <select
+                  id="narodnost"
+                  name="narodnost"
+                  defaultValue="Česká"
+                  required
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  {NARODNOSTI.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
 
-          {/* Sleva jinde */}
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="uplatnuje_slevu_jinde" name="uplatnuje_slevu_jinde" className="h-4 w-4" />
-            <Label htmlFor="uplatnuje_slevu_jinde" className="font-normal">Uplatňuji slevu na dani u jiného zaměstnavatele</Label>
-          </div>
+              <fieldset className="border border-input rounded-lg p-4 space-y-3">
+                <legend className="text-sm font-semibold px-2">Trvalé bydliště *</legend>
+                <div className="space-y-2">
+                  <Label htmlFor="ulice_cp">Ulice a číslo popisné *</Label>
+                  <Input id="ulice_cp" name="ulice_cp" placeholder="Revoluční 1403/28" required />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="psc">PSČ *</Label>
+                    <Input id="psc" name="psc" placeholder="110 00" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="mesto_bydliste">Město *</Label>
+                    <Input id="mesto_bydliste" name="mesto_bydliste" placeholder="Praha" required />
+                  </div>
+                  <div className="space-y-2 col-span-2 sm:col-span-1">
+                    <Label htmlFor="zeme">Země *</Label>
+                    <Input id="zeme" name="zeme" defaultValue="Česká republika" required />
+                  </div>
+                </div>
+              </fieldset>
+
+              <div className="space-y-2">
+                <Label htmlFor="korespondencni_adresa">
+                  Korespondenční adresa <span className="text-muted-foreground text-xs">(jen pokud se liší od trvalého bydliště)</span>
+                </Label>
+                <Input id="korespondencni_adresa" name="korespondencni_adresa" placeholder="Ulice, č.p., PSČ a město" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cislo_op">Číslo OP či jiného dokladu *</Label>
+                  <Input id="cislo_op" name="cislo_op" required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cislo_uctu">Číslo bankovního účtu *</Label>
+                  <Input id="cislo_uctu" name="cislo_uctu" required />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="kod_banky">Kód banky *</Label>
+                <Input id="kod_banky" name="kod_banky" className="max-w-32" required />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="zdravotni_pojistovna">Zdravotní pojišťovna *</Label>
+                <select
+                  id="zdravotni_pojistovna"
+                  name="zdravotni_pojistovna"
+                  required
+                  onChange={(e) => setZpJina(e.target.value === "jina")}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">— vyberte —</option>
+                  {ZDRAVOTNI_POJISTOVNY.map((zp) => (
+                    <option key={zp.kod} value={zp.kod}>{zp.kod === "jina" ? zp.nazev : `${zp.kod} — ${zp.nazev}`}</option>
+                  ))}
+                </select>
+                {zpJina && (
+                  <div className="space-y-1 mt-2">
+                    <Label htmlFor="zdravotni_pojistovna_jina">Název pojišťovny + kód *</Label>
+                    <Input id="zdravotni_pojistovna_jina" name="zdravotni_pojistovna_jina" placeholder="Název a kód pojišťovny" required />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="vzdelani">Nejvyšší dokončené vzdělání *</Label>
+                <select id="vzdelani" name="vzdelani" required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <option value="">— vyberte —</option>
+                  {VZDELANI_OPTIONS.map((v) => (
+                    <option key={v.value} value={v.value}>{v.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* F-0013: Růžové prohlášení */}
+              <div className="flex items-start gap-2">
+                <input type="checkbox" id="chce_ruzove_prohlaseni" name="chce_ruzove_prohlaseni" className="h-4 w-4 mt-0.5" />
+                <div>
+                  <Label htmlFor="chce_ruzove_prohlaseni" className="font-normal cursor-pointer">
+                    Chci podepsat růžové prohlášení (sleva na dani)
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Růžové prohlášení lze uplatnit jen u JEDNOHO zaměstnavatele v daném měsíci.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* GDPR */}
           <div className="flex items-start gap-2 pt-2">

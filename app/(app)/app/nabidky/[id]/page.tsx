@@ -32,15 +32,13 @@ async function enrichPipeline(
   const supabase = await createClient()
   const brigIds = [...new Set(pipeline.map(p => (p.brigadnik as unknown as { id: string } | null)?.id).filter(Boolean))] as string[]
 
-  // Current month smluvni_stav
-  const mesic = new Date()
-  mesic.setDate(1)
-  const mesicStr = mesic.toISOString().slice(0, 10)
+  // F-0013: per-rok smluvni_stav (aktuální rok)
+  const rok = new Date().getFullYear()
   const { data: smluvni } = await supabase
     .from("smluvni_stav")
     .select("brigadnik_id, dpp_stav, prohlaseni_stav")
     .in("brigadnik_id", brigIds)
-    .eq("mesic", mesicStr)
+    .eq("rok", rok)
 
   const smluvniMap = new Map<string, { dpp_stav: string; prohlaseni_stav: string }>()
   for (const s of smluvni ?? []) {

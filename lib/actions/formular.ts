@@ -4,35 +4,9 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sendGmailMessage } from "@/lib/email/gmail-send"
-import { encrypt } from "@/lib/utils/crypto"
-import { z } from "zod"
-
-const dotaznikSchema = z.object({
-  token: z.string(),
-  jmeno: z.string().min(1, "Jméno je povinné"),
-  prijmeni: z.string().min(1, "Příjmení je povinné"),
-  telefon: z.string().optional(),
-  rodne_cislo: z.string().min(1, "Rodné číslo je povinné"),
-  rodne_jmeno: z.string().optional(),
-  rodne_prijmeni: z.string().optional(),
-  datum_narozeni: z.string().min(1, "Datum narození je povinné"),
-  misto_narozeni: z.string().min(1, "Místo narození je povinné"),
-  ulice_cp: z.string().min(1, "Ulice a číslo popisné je povinné"),
-  psc: z.string().min(1, "PSČ je povinné"),
-  mesto_bydliste: z.string().min(1, "Město je povinné"),
-  zeme: z.string().min(1, "Země je povinná"),
-  korespondencni_adresa: z.string().optional(),
-  cislo_op: z.string().min(1, "Číslo OP je povinné"),
-  zdravotni_pojistovna: z.string().min(1, "Zdravotní pojišťovna je povinná"),
-  zdravotni_pojistovna_jina: z.string().optional(),
-  cislo_uctu: z.string().min(1, "Číslo účtu je povinné"),
-  kod_banky: z.string().min(1, "Kód banky je povinný"),
-  vzdelani: z.string().min(1, "Vzdělání je povinné"),
-  student: z.string().optional(),
-  nazev_skoly: z.string().optional(),
-  uplatnuje_slevu_jinde: z.string().optional(),
-  gdpr: z.literal("on", { message: "Souhlas je povinný" }),
-})
+import { encrypt, maybeEncryptDic } from "@/lib/utils/crypto"
+import { dotaznikSchema } from "@/lib/schemas/dotaznik"
+import { maybeAutoTransitionPipeline } from "./pipeline"
 
 export async function getFormularByToken(token: string) {
   const supabase = createAdminClient()
@@ -46,100 +20,160 @@ export async function getFormularByToken(token: string) {
 
   if (!tokenData) return null
 
-  // Check expiration
   if (new Date(tokenData.expiruje_at) < new Date()) return null
 
   return tokenData
 }
 
+/**
+ * F-0013: submitDotaznik s discriminated union.
+ *
+ * D-F0013-14: `typ_brigadnika` default = 'brigadnik' pokud FormData neobsahuje
+ * (checkbox unchecked = chybějící key → discriminator by selhal).
+ *
+ * Brigadnik branch:
+ *  - plné DPP údaje, šifrované RČ + OP
+ *  - `dotaznik_vyplnen=true`, nová pole `narodnost`, `chce_ruzove_prohlaseni`
+ *
+ * OSVČ branch:
+ *  - jen fakturační údaje (osvc_ico, osvc_dic, osvc_fakturacni_adresa)
+ *  - `typ_brigadnika='osvc'`
+ *  - RČ/OP/banka/pojišťovna se nedotýkají (zůstanou NULL)
+ *  - DIČ: mixed-encryption dle D-17 security override přes `maybeEncryptDic()`
+ *    (FO = CZ+10 číslic šifrováno, PO = CZ+8–9 číslic plain — veřejný IČO)
+ *  - volá maybeAutoTransitionPipeline — OSVČ flag auto-flipne NH→VV
+ */
 export async function submitDotaznik(formData: FormData) {
-  const raw = Object.fromEntries(formData.entries())
-  const parsed = dotaznikSchema.safeParse(raw)
+  const raw = Object.fromEntries(formData.entries()) as Record<string, string>
 
+  // D-F0013-14: default discriminator
+  if (!raw.typ_brigadnika || (raw.typ_brigadnika !== "brigadnik" && raw.typ_brigadnika !== "osvc")) {
+    raw.typ_brigadnika = "brigadnik"
+  }
+
+  const parsed = dotaznikSchema.safeParse(raw)
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
   }
 
+  const input = parsed.data
   const supabase = createAdminClient()
 
-  // Verify token
   const { data: tokenData } = await supabase
     .from("formular_tokeny")
     .select("brigadnik_id")
-    .eq("token", parsed.data.token)
+    .eq("token", input.token)
     .eq("vyplneno", false)
     .single()
 
   if (!tokenData) return { error: "Neplatný nebo expirovaný odkaz" }
 
-  // Encrypt sensitive fields
-  const encryptedRC = encrypt(parsed.data.rodne_cislo)
-  const encryptedOP = encrypt(parsed.data.cislo_op)
+  const now = new Date().toISOString()
+  const brigadnikId = tokenData.brigadnik_id
 
-  // Resolve ZP: if "jina" selected, use the custom value
-  const zpValue = parsed.data.zdravotni_pojistovna === "jina"
-    ? (parsed.data.zdravotni_pojistovna_jina || "jina")
-    : parsed.data.zdravotni_pojistovna
+  if (input.typ_brigadnika === "brigadnik") {
+    // --- Brigadnik branch (DPP) ---
+    const encryptedRC = encrypt(input.rodne_cislo)
+    const encryptedOP = encrypt(input.cislo_op)
 
-  // Compose full address from parts (backwards-compatible with 'adresa' field)
-  const fullAdresa = `${parsed.data.ulice_cp}, ${parsed.data.psc} ${parsed.data.mesto_bydliste}, ${parsed.data.zeme}`
+    const zpValue = input.zdravotni_pojistovna === "jina"
+      ? (input.zdravotni_pojistovna_jina || "jina")
+      : input.zdravotni_pojistovna
 
-  // Update brigadnik with personal data
-  const { error: updateError } = await supabase
-    .from("brigadnici")
-    .update({
-      jmeno: parsed.data.jmeno,
-      prijmeni: parsed.data.prijmeni,
-      telefon: parsed.data.telefon || undefined,
-      rodne_cislo: encryptedRC,
-      rodne_jmeno: parsed.data.rodne_jmeno || null,
-      rodne_prijmeni: parsed.data.rodne_prijmeni || null,
-      datum_narozeni: parsed.data.datum_narozeni,
-      misto_narozeni: parsed.data.misto_narozeni,
-      adresa: fullAdresa,
-      ulice_cp: parsed.data.ulice_cp,
-      psc: parsed.data.psc,
-      mesto_bydliste: parsed.data.mesto_bydliste,
-      zeme: parsed.data.zeme,
-      korespondencni_adresa: parsed.data.korespondencni_adresa || null,
-      cislo_op: encryptedOP,
-      zdravotni_pojistovna: zpValue,
-      cislo_uctu: parsed.data.cislo_uctu,
-      kod_banky: parsed.data.kod_banky,
-      vzdelani: parsed.data.vzdelani,
-      student: parsed.data.student === "on",
-      nazev_skoly: parsed.data.nazev_skoly || null,
-      uplatnuje_slevu_jinde: parsed.data.uplatnuje_slevu_jinde === "on",
-      dotaznik_vyplnen: true,
-      dotaznik_vyplnen_at: new Date().toISOString(),
-      gdpr_souhlas: true,
-      gdpr_souhlas_at: new Date().toISOString(),
-    })
-    .eq("id", tokenData.brigadnik_id)
+    const fullAdresa = `${input.ulice_cp}, ${input.psc} ${input.mesto_bydliste}, ${input.zeme}`
 
-  if (updateError) return { error: "Nepodařilo se uložit údaje" }
+    const chceRuzove = input.chce_ruzove_prohlaseni === "on"
+      || input.chce_ruzove_prohlaseni === "true"
 
-  // Mark token as used
+    const { error: updateError } = await supabase
+      .from("brigadnici")
+      .update({
+        typ_brigadnika: "brigadnik",
+        jmeno: input.jmeno,
+        prijmeni: input.prijmeni,
+        telefon: input.telefon,
+        rodne_cislo: encryptedRC,
+        rodne_jmeno: input.rodne_jmeno || null,
+        rodne_prijmeni: input.rodne_prijmeni || null,
+        datum_narozeni: input.datum_narozeni,
+        misto_narozeni: input.misto_narozeni,
+        adresa: fullAdresa,
+        ulice_cp: input.ulice_cp,
+        psc: input.psc,
+        mesto_bydliste: input.mesto_bydliste,
+        zeme: input.zeme,
+        korespondencni_adresa: input.korespondencni_adresa || null,
+        cislo_op: encryptedOP,
+        zdravotni_pojistovna: zpValue,
+        cislo_uctu: input.cislo_uctu,
+        kod_banky: input.kod_banky,
+        vzdelani: input.vzdelani,
+        narodnost: input.narodnost,
+        chce_ruzove_prohlaseni: chceRuzove,
+        dotaznik_vyplnen: true,
+        dotaznik_vyplnen_at: now,
+        gdpr_souhlas: true,
+        gdpr_souhlas_at: now,
+      })
+      .eq("id", brigadnikId)
+
+    if (updateError) {
+      console.error("submitDotaznik (brigadnik) update error:", updateError)
+      return { error: "Nepodařilo se uložit údaje" }
+    }
+  } else {
+    // --- OSVČ branch (fakturace) ---
+    const { error: updateError } = await supabase
+      .from("brigadnici")
+      .update({
+        typ_brigadnika: "osvc",
+        jmeno: input.jmeno,
+        prijmeni: input.prijmeni,
+        telefon: input.telefon,
+        osvc_ico: input.osvc_ico,
+        // D-17: FO (CZ+10) encrypted, PO (CZ+8–9) plain. Viz maybeEncryptDic.
+        osvc_dic: maybeEncryptDic(input.osvc_dic),
+        osvc_fakturacni_adresa: input.osvc_fakturacni_adresa,
+        dotaznik_vyplnen: true,
+        dotaznik_vyplnen_at: now,
+        gdpr_souhlas: true,
+        gdpr_souhlas_at: now,
+      })
+      .eq("id", brigadnikId)
+
+    if (updateError) {
+      console.error("submitDotaznik (osvc) update error:", updateError)
+      return { error: "Nepodařilo se uložit fakturační údaje" }
+    }
+  }
+
   await supabase
     .from("formular_tokeny")
-    .update({ vyplneno: true, vyplneno_at: new Date().toISOString() })
-    .eq("token", parsed.data.token)
+    .update({ vyplneno: true, vyplneno_at: now })
+    .eq("token", input.token)
 
-  // Auto-update pipeline: move to prijaty_nehotova_admin
+  // Auto pipeline: brigadnik → NH, OSVČ → VV (přes auto-transition)
   await supabase
     .from("pipeline_entries")
     .update({ stav: "prijaty_nehotova_admin" })
-    .eq("brigadnik_id", tokenData.brigadnik_id)
+    .eq("brigadnik_id", brigadnikId)
     .in("stav", ["zajemce", "kontaktovan"])
 
-  // Audit log
   await supabase.from("historie").insert({
-    brigadnik_id: tokenData.brigadnik_id,
+    brigadnik_id: brigadnikId,
     typ: "dotaznik_vyplnen",
-    popis: "Dotazník osobních údajů vyplněn",
+    popis: input.typ_brigadnika === "osvc"
+      ? "Dotazník vyplněn (OSVČ větev)"
+      : "Dotazník osobních údajů vyplněn",
+    metadata: { typ_brigadnika: input.typ_brigadnika },
   })
 
-  return { success: true }
+  // D-F0013-03: OSVČ flag → auto-flipnout všechny NH entries na VV
+  if (input.typ_brigadnika === "osvc") {
+    await maybeAutoTransitionPipeline(brigadnikId, "osvc_flag")
+  }
+
+  return { success: true, brigadnik_id: brigadnikId }
 }
 
 export async function sendDotaznikEmail(brigadnikId: string) {
@@ -149,7 +183,6 @@ export async function sendDotaznikEmail(brigadnikId: string) {
 
   const adminClient = createAdminClient()
 
-  // Get brigadnik
   const { data: brigadnik } = await adminClient
     .from("brigadnici")
     .select("id, jmeno, prijmeni, email")
@@ -158,7 +191,6 @@ export async function sendDotaznikEmail(brigadnikId: string) {
 
   if (!brigadnik) return { error: "Brigádník nenalezen" }
 
-  // Create token
   const { data: token, error: tokenError } = await adminClient
     .from("formular_tokeny")
     .insert({ brigadnik_id: brigadnikId, typ: "dotaznik" })
@@ -170,7 +202,6 @@ export async function sendDotaznikEmail(brigadnikId: string) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
   const link = `${appUrl}/formular/${token.token}`
 
-  // Get email template
   const { data: template } = await adminClient
     .from("email_sablony")
     .select("predmet, obsah_html")
@@ -192,7 +223,6 @@ export async function sendDotaznikEmail(brigadnikId: string) {
     return { error: "Nepodařilo se odeslat email" }
   }
 
-  // Audit log
   const { data: internalUser } = await adminClient
     .from("users")
     .select("id")

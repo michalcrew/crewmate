@@ -70,7 +70,7 @@ export function AddSablonaDialog() {
           <div className="space-y-2">
             <Label htmlFor="ns-obsah">HTML obsah šablony *</Label>
             <p className="text-xs text-muted-foreground">
-              Proměnné: {"{{jmeno}}, {{prijmeni}}, {{rodne_cislo}}, {{datum_narozeni}}, {{adresa}}, {{cislo_op}}, {{zdravotni_pojistovna}}, {{cislo_uctu}}, {{kod_banky}}, {{mesic}}, {{uplatnuje_slevu_text}}"}
+              Proměnné: {"{{jmeno}}, {{prijmeni}}, {{rodne_cislo}}, {{datum_narozeni}}, {{adresa}}, {{cislo_op}}, {{zdravotni_pojistovna}}, {{cislo_uctu}}, {{kod_banky}}, {{rok}}, {{narodnost}}"}
             </p>
             <Textarea
               id="ns-obsah"

@@ -6,14 +6,27 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { decrypt } from "@/lib/utils/crypto"
 import { escapeHtml, isAllowedFileType, MAX_FILE_SIZE } from "@/lib/utils/sanitize"
 import { sendGmailMessage } from "@/lib/email/gmail-send"
-import { getOrCreateSmluvniStav, updateDppStav } from "./smluvni-stav"
+import { getOrCreateSmluvniStav, updateDppStav, updateProhlaseniStav, signDpp, signProhlaseni } from "./smluvni-stav"
 
-export async function generateDpp(brigadnikId: string, mesic: string) {
+/**
+ * F-0013: všechny DPP/prohlášení akce jsou per-rok (INT 2020..2100).
+ * `dokumenty.mesic` (DATE) zůstává (D-F0013-12) — pro DPP/prohlášení ukládáme
+ * `make_date(rok, 1, 1)` jako placeholder kotvy na rok.
+ */
+
+function rokToMesicAnchor(rok: number): string {
+  return `${rok}-01-01`
+}
+
+function rokToLabel(rok: number): string {
+  return `rok ${rok}`
+}
+
+export async function generateDpp(brigadnikId: string, rok: number) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  // Get brigadnik data
   const { data: brigadnik } = await supabase
     .from("brigadnici")
     .select("*")
@@ -21,23 +34,22 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     .single()
 
   if (!brigadnik) return { error: "Brigádník nenalezen" }
+  if (brigadnik.typ_brigadnika === "osvc") return { error: "OSVČ nemůže mít DPP" }
   if (!brigadnik.dotaznik_vyplnen) return { error: "Brigádník nemá vyplněný dotazník" }
 
-  // Decrypt sensitive fields
   let rodne_cislo = ""
   let cislo_op = ""
   try {
     if (brigadnik.rodne_cislo) rodne_cislo = decrypt(brigadnik.rodne_cislo)
     if (brigadnik.cislo_op) cislo_op = decrypt(brigadnik.cislo_op)
   } catch {
-    // Data might not be encrypted (legacy/test data)
     rodne_cislo = brigadnik.rodne_cislo ?? ""
     cislo_op = brigadnik.cislo_op ?? ""
   }
 
-  const mesicLabel = new Date(`${mesic}-01`).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })
+  const rokLabel = rokToLabel(rok)
+  const mesicAnchor = rokToMesicAnchor(rok)
 
-  // Escape all user data for HTML
   const fullAdresa = brigadnik.adresa
     ?? [brigadnik.ulice_cp, brigadnik.psc, brigadnik.mesto_bydliste, brigadnik.zeme].filter(Boolean).join(", ")
 
@@ -57,26 +69,24 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     cislo_uctu: escapeHtml(brigadnik.cislo_uctu ?? ""),
     kod_banky: escapeHtml(brigadnik.kod_banky ?? ""),
     vzdelani: escapeHtml(brigadnik.vzdelani ?? ""),
-    uplatnuje_slevu_text: brigadnik.uplatnuje_slevu_jinde ? "SOUČASNĚ" : "NESOUČASNĚ",
+    narodnost: escapeHtml(brigadnik.narodnost ?? ""),
   }
 
-  // Load DPP template from DB
   const adminClient = createAdminClient()
   const { data: sablona } = await adminClient
     .from("dokument_sablony")
     .select("obsah_html")
     .eq("typ", "dpp")
     .eq("aktivni", true)
-    .lte("platnost_od", `${mesic}-01`)
+    .lte("platnost_od", mesicAnchor)
     .order("platnost_od", { ascending: false })
     .limit(1)
     .single()
 
-  // Generate DPP from template (or fallback)
   const dppTemplate = sablona?.obsah_html ?? `
     <html><body style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px;">
     <h1 style="text-align: center;">Dohoda o provedení práce</h1>
-    <p style="text-align: center;">na měsíc: <strong>${mesicLabel}</strong></p>
+    <p style="text-align: center;">pro <strong>${rokLabel}</strong></p>
     <hr/>
     <h3>Zaměstnavatel:</h3>
     <p>Crewmate, s.r.o.<br/>IČO: 23782587</p>
@@ -101,7 +111,6 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     </body></html>
   `
 
-  // Replace template variables with escaped user data
   const dppHtml = dppTemplate
     .replaceAll("{{jmeno}}", safe.jmeno)
     .replaceAll("{{prijmeni}}", safe.prijmeni)
@@ -118,18 +127,17 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     .replaceAll("{{cislo_uctu}}", safe.cislo_uctu)
     .replaceAll("{{kod_banky}}", safe.kod_banky)
     .replaceAll("{{vzdelani}}", safe.vzdelani)
-    .replaceAll("{{mesic}}", escapeHtml(mesicLabel))
-    .replaceAll("{{uplatnuje_slevu_text}}", safe.uplatnuje_slevu_text)
+    .replaceAll("{{narodnost}}", safe.narodnost)
+    .replaceAll("{{rok}}", escapeHtml(String(rok)))
+    .replaceAll("{{mesic}}", escapeHtml(rokLabel))
 
-  // Store as document in Supabase Storage
-  const fileName = `DPP_${brigadnik.prijmeni}_${brigadnik.jmeno}_${mesic}.html`
+  const fileName = `DPP_${brigadnik.prijmeni}_${brigadnik.jmeno}_${rok}.html`
   const storagePath = `dokumenty/${brigadnikId}/dpp/${fileName}`
 
   const { error: uploadError } = await adminClient.storage
     .from("crewmate-storage")
     .upload(storagePath, new Blob([dppHtml], { type: "text/html" }), { upsert: true })
 
-  // If bucket doesn't exist yet, create it
   if (uploadError?.message?.includes("not found")) {
     await adminClient.storage.createBucket("crewmate-storage", { public: false })
     await adminClient.storage
@@ -137,7 +145,6 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
       .upload(storagePath, new Blob([dppHtml], { type: "text/html" }), { upsert: true })
   }
 
-  // Create document record
   const { data: dokument } = await adminClient
     .from("dokumenty")
     .insert({
@@ -145,17 +152,15 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
       typ: "dpp",
       nazev: fileName,
       storage_path: storagePath,
-      mesic: `${mesic}-01`,
+      mesic: mesicAnchor,
       mime_type: "text/html",
     })
     .select("id")
     .single()
 
-  // Update smluvni stav
-  const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, mesic)
+  const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, rok)
   await updateDppStav(smluvniStav.id, brigadnikId, "vygenerovano", dokument?.id)
 
-  // Audit log
   const { data: internalUser } = await adminClient
     .from("users")
     .select("id")
@@ -166,14 +171,15 @@ export async function generateDpp(brigadnikId: string, mesic: string) {
     brigadnik_id: brigadnikId,
     user_id: internalUser?.id,
     typ: "dpp_vygenerovano",
-    popis: `DPP vygenerováno pro ${mesicLabel}`,
+    popis: `DPP vygenerováno pro ${rokLabel}`,
+    metadata: { rok },
   })
 
   revalidatePath(`/app/brigadnici/${brigadnikId}`)
   return { success: true }
 }
 
-export async function generateProhlaseni(brigadnikId: string, mesic: string) {
+export async function generateProhlaseni(brigadnikId: string, rok: number) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
@@ -181,55 +187,56 @@ export async function generateProhlaseni(brigadnikId: string, mesic: string) {
   const { data: brigadnik } = await supabase
     .from("brigadnici").select("*").eq("id", brigadnikId).single()
   if (!brigadnik) return { error: "Brigádník nenalezen" }
+  if (brigadnik.typ_brigadnika === "osvc") return { error: "OSVČ nemůže mít prohlášení" }
   if (!brigadnik.dotaznik_vyplnen) return { error: "Brigádník nemá vyplněný dotazník" }
 
   let rodne_cislo = ""
   try { if (brigadnik.rodne_cislo) rodne_cislo = decrypt(brigadnik.rodne_cislo) } catch { rodne_cislo = brigadnik.rodne_cislo ?? "" }
 
-  const mesicLabel = new Date(`${mesic}-01`).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })
+  const rokLabel = rokToLabel(rok)
+  const mesicAnchor = rokToMesicAnchor(rok)
   const adminClient = createAdminClient()
 
   const safe = {
     jmeno: escapeHtml(brigadnik.jmeno), prijmeni: escapeHtml(brigadnik.prijmeni),
     rodne_cislo: escapeHtml(rodne_cislo), adresa: escapeHtml(brigadnik.adresa ?? ""),
-    uplatnuje_slevu_text: brigadnik.uplatnuje_slevu_jinde ? "SOUČASNĚ" : "NESOUČASNĚ",
   }
 
   const { data: sablona } = await adminClient
     .from("dokument_sablony").select("obsah_html").eq("typ", "prohlaseni").eq("aktivni", true)
-    .lte("platnost_od", `${mesic}-01`).order("platnost_od", { ascending: false }).limit(1).single()
+    .lte("platnost_od", mesicAnchor).order("platnost_od", { ascending: false }).limit(1).single()
 
   const html = (sablona?.obsah_html ?? "<p>Prohlášení — šablona nenalezena</p>")
     .replaceAll("{{jmeno}}", safe.jmeno).replaceAll("{{prijmeni}}", safe.prijmeni)
     .replaceAll("{{rodne_cislo}}", safe.rodne_cislo).replaceAll("{{adresa}}", safe.adresa)
-    .replaceAll("{{mesic}}", escapeHtml(mesicLabel))
-    .replaceAll("{{uplatnuje_slevu_text}}", safe.uplatnuje_slevu_text)
+    .replaceAll("{{rok}}", escapeHtml(String(rok)))
+    .replaceAll("{{mesic}}", escapeHtml(rokLabel))
 
-  const fileName = `Prohlaseni_${brigadnik.prijmeni}_${brigadnik.jmeno}_${mesic}.html`
+  const fileName = `Prohlaseni_${brigadnik.prijmeni}_${brigadnik.jmeno}_${rok}.html`
   const storagePath = `dokumenty/${brigadnikId}/prohlaseni/${fileName}`
 
   await adminClient.storage.from("crewmate-storage").upload(storagePath, new Blob([html], { type: "text/html" }), { upsert: true })
 
   const { data: dokument } = await adminClient.from("dokumenty").insert({
     brigadnik_id: brigadnikId, typ: "prohlaseni", nazev: fileName,
-    storage_path: storagePath, mesic: `${mesic}-01`, mime_type: "text/html",
+    storage_path: storagePath, mesic: mesicAnchor, mime_type: "text/html",
   }).select("id").single()
 
-  const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, mesic)
-  const { updateProhlaseniStav } = await import("./smluvni-stav")
+  const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, rok)
   await updateProhlaseniStav(smluvniStav.id, brigadnikId, "vygenerovano", dokument?.id)
 
   const { data: internalUser } = await adminClient.from("users").select("id").eq("auth_user_id", user.id).single()
   await adminClient.from("historie").insert({
     brigadnik_id: brigadnikId, user_id: internalUser?.id,
-    typ: "dpp_vygenerovano", popis: `Prohlášení vygenerováno pro ${mesicLabel}`,
+    typ: "prohlaseni_vygenerovano", popis: `Prohlášení vygenerováno pro ${rokLabel}`,
+    metadata: { rok },
   })
 
   revalidatePath(`/app/brigadnici/${brigadnikId}`)
   return { success: true }
 }
 
-export async function sendDppEmail(brigadnikId: string, mesic: string) {
+export async function sendDppEmail(brigadnikId: string, rok: number) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
@@ -243,17 +250,16 @@ export async function sendDppEmail(brigadnikId: string, mesic: string) {
     .single()
 
   if (!brigadnik) return { error: "Brigádník nenalezen" }
+  if (brigadnik.typ_brigadnika === "osvc") return { error: "OSVČ nedostávají DPP" }
   if (!brigadnik.dotaznik_vyplnen) return { error: "Brigádník nemá vyplněný dotazník — nelze generovat DPP" }
 
-  const mesicLabel = new Date(`${mesic}-01`).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })
+  const rokLabel = rokToLabel(rok)
 
-  // Decrypt sensitive data for PDF
   let rodne_cislo = ""
   let cislo_op = ""
   try { if (brigadnik.rodne_cislo) rodne_cislo = decrypt(brigadnik.rodne_cislo) } catch { rodne_cislo = brigadnik.rodne_cislo ?? "" }
   try { if (brigadnik.cislo_op) cislo_op = decrypt(brigadnik.cislo_op) } catch { cislo_op = brigadnik.cislo_op ?? "" }
 
-  // Generate PDF
   const { generateDppPdf } = await import("@/lib/pdf/generate-dpp-pdf")
   const pdfBuffer = await generateDppPdf({
     jmeno: brigadnik.jmeno,
@@ -265,17 +271,16 @@ export async function sendDppEmail(brigadnikId: string, mesic: string) {
     zdravotni_pojistovna: brigadnik.zdravotni_pojistovna ?? "",
     cislo_uctu: brigadnik.cislo_uctu ?? "",
     kod_banky: brigadnik.kod_banky ?? "",
-    mesicLabel,
+    mesicLabel: rokLabel,
   })
 
-  const pdfFilename = `DPP_${brigadnik.prijmeni}_${brigadnik.jmeno}_${mesic}.pdf`
+  const pdfFilename = `DPP_${brigadnik.prijmeni}_${brigadnik.jmeno}_${rok}.pdf`
 
-  // Email with PDF attachment
-  const subject = `DPP k podpisu — ${mesicLabel} — Crewmate`
+  const subject = `DPP k podpisu — ${rokLabel} — Crewmate`
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2>Dobrý den, ${escapeHtml(brigadnik.jmeno)},</h2>
-      <p>v příloze Vám zasíláme <strong>Dohodu o provedení práce (DPP)</strong> na měsíc <strong>${escapeHtml(mesicLabel)}</strong>.</p>
+      <p>v příloze Vám zasíláme <strong>Dohodu o provedení práce (DPP)</strong> pro <strong>${escapeHtml(rokLabel)}</strong>.</p>
 
       <div style="background: #f5f5f5; border-radius: 8px; padding: 16px; margin: 16px 0;">
         <p style="margin: 0 0 8px 0;"><strong>Jak postupovat:</strong></p>
@@ -314,51 +319,105 @@ export async function sendDppEmail(brigadnikId: string, mesic: string) {
     return { error: "Nepodařilo se odeslat email" }
   }
 
-  // Update smluvni stav
-  const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, mesic)
+  const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, rok)
   await updateDppStav(smluvniStav.id, brigadnikId, "odeslano")
 
-  // Get internal user for audit
   const { data: internalUser } = await adminClient.from("users").select("id").eq("auth_user_id", user.id).single()
 
-  // Audit log
   await adminClient.from("historie").insert({
     brigadnik_id: brigadnikId,
     user_id: internalUser?.id,
     typ: "email_odeslan",
-    popis: `DPP odeslána emailem s PDF přílohou na ${brigadnik.email} (${mesicLabel})`,
+    popis: `DPP odeslána emailem s PDF přílohou na ${brigadnik.email} (${rokLabel})`,
+    metadata: { rok },
   })
 
   revalidatePath(`/app/brigadnici/${brigadnikId}`)
   return { success: true }
 }
 
+export async function sendProhlaseniEmail(brigadnikId: string, rok: number) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const adminClient = createAdminClient()
+  const { data: brigadnik } = await adminClient
+    .from("brigadnici").select("*").eq("id", brigadnikId).single()
+  if (!brigadnik) return { error: "Brigádník nenalezen" }
+  if (brigadnik.typ_brigadnika === "osvc") return { error: "OSVČ nedostávají prohlášení" }
+  if (!brigadnik.dotaznik_vyplnen) return { error: "Brigádník nemá vyplněný dotazník" }
+
+  const rokLabel = rokToLabel(rok)
+
+  const subject = `Prohlášení k podpisu — ${rokLabel} — Crewmate`
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2>Dobrý den, ${escapeHtml(brigadnik.jmeno)},</h2>
+      <p>v příloze Vám zasíláme <strong>Prohlášení poplatníka (růžové)</strong> pro <strong>${escapeHtml(rokLabel)}</strong>.</p>
+      <p>Prosíme o podpis a zpětné zaslání.</p>
+      <p>Děkujeme,<br/><strong>Tým Crewmate</strong></p>
+    </div>
+  `
+
+  try {
+    await sendGmailMessage({ to: brigadnik.email, subject, bodyHtml: html })
+  } catch (err) {
+    console.error("Prohlaseni email error:", err)
+    return { error: "Nepodařilo se odeslat email" }
+  }
+
+  const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, rok)
+  await updateProhlaseniStav(smluvniStav.id, brigadnikId, "odeslano")
+
+  const { data: internalUser } = await adminClient.from("users").select("id").eq("auth_user_id", user.id).single()
+  await adminClient.from("historie").insert({
+    brigadnik_id: brigadnikId,
+    user_id: internalUser?.id,
+    typ: "email_odeslan",
+    popis: `Prohlášení odeslána emailem na ${brigadnik.email} (${rokLabel})`,
+    metadata: { rok },
+  })
+
+  revalidatePath(`/app/brigadnici/${brigadnikId}`)
+  return { success: true }
+}
+
+/**
+ * uploadPodpis — upload skenu podepsaného DPP / prohlášení; F-0013 per-rok.
+ * Po úspěšném uploadu volá signDpp / signProhlaseni (které zajistí i auto-transition).
+ */
 export async function uploadPodpis(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
   const brigadnikId = formData.get("brigadnik_id") as string
-  const mesic = formData.get("mesic") as string
+  const rokRaw = formData.get("rok") as string
   const typ = formData.get("typ") as string // 'dpp_podpis' | 'prohlaseni_podpis'
   const file = formData.get("file") as File
 
+  const rok = Number(rokRaw)
+  if (!Number.isInteger(rok) || rok < 2020 || rok > 2100) {
+    return { error: "Neplatný rok" }
+  }
   if (!file || file.size === 0) return { error: "Soubor je povinný" }
   if (file.size > MAX_FILE_SIZE) return { error: "Soubor je příliš velký (max 20 MB)" }
   if (!isAllowedFileType(file.type)) return { error: "Nepodporovaný typ souboru. Povolené: PDF, JPG, PNG." }
 
   const { data: brigadnik } = await supabase
     .from("brigadnici")
-    .select("prijmeni, jmeno")
+    .select("prijmeni, jmeno, typ_brigadnika")
     .eq("id", brigadnikId)
     .single()
 
   if (!brigadnik) return { error: "Brigádník nenalezen" }
+  if (brigadnik.typ_brigadnika === "osvc") return { error: "OSVČ nemají DPP / prohlášení" }
 
   const adminClient = createAdminClient()
   const ext = file.name.split(".").pop() ?? "pdf"
   const typLabel = typ === "dpp_podpis" ? "DPP_podpis" : "Prohlaseni_podpis"
-  const fileName = `${typLabel}_${brigadnik.prijmeni}_${brigadnik.jmeno}_${mesic}.${ext}`
+  const fileName = `${typLabel}_${brigadnik.prijmeni}_${brigadnik.jmeno}_${rok}.${ext}`
   const storagePath = `dokumenty/${brigadnikId}/${typ}/${fileName}`
 
   const buffer = Buffer.from(await file.arrayBuffer())
@@ -367,7 +426,6 @@ export async function uploadPodpis(formData: FormData) {
     upsert: true,
   })
 
-  // Create document record
   const { data: dokument } = await adminClient
     .from("dokumenty")
     .insert({
@@ -375,29 +433,40 @@ export async function uploadPodpis(formData: FormData) {
       typ,
       nazev: fileName,
       storage_path: storagePath,
-      mesic: `${mesic}-01`,
+      mesic: rokToMesicAnchor(rok),
       velikost: file.size,
       mime_type: file.type,
     })
     .select("id")
     .single()
 
-  // Update smluvni stav
-  const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, mesic)
   if (typ === "dpp_podpis") {
-    await updateDppStav(smluvniStav.id, brigadnikId, "podepsano", dokument?.id)
+    const result = await signDpp(brigadnikId, rok, dokument?.id)
+    if ("error" in result) return { error: result.error }
   } else {
-    const { updateProhlaseniStav } = await import("./smluvni-stav")
-    await updateProhlaseniStav(smluvniStav.id, brigadnikId, "podepsano", dokument?.id)
+    const result = await signProhlaseni(brigadnikId, rok, dokument?.id)
+    if ("error" in result) return { error: result.error }
   }
 
-  // Audit log
   await adminClient.from("historie").insert({
     brigadnik_id: brigadnikId,
     typ: "dokument_nahran",
-    popis: `Podepsaný ${typ === "dpp_podpis" ? "DPP" : "prohlášení"} nahrán`,
+    popis: `Podepsaný ${typ === "dpp_podpis" ? "DPP" : "prohlášení"} nahrán (${rok})`,
+    metadata: { rok, typ },
   })
 
   revalidatePath(`/app/brigadnici/${brigadnikId}`)
   return { success: true }
+}
+
+// Zpětně kompatibilní aliasy pro UI, které dříve používalo uploadPodpis jako
+// generický handler a jiné názvy.
+export async function uploadDppPodpis(formData: FormData) {
+  formData.set("typ", "dpp_podpis")
+  return uploadPodpis(formData)
+}
+
+export async function uploadProhlaseniPodpis(formData: FormData) {
+  formData.set("typ", "prohlaseni_podpis")
+  return uploadPodpis(formData)
 }

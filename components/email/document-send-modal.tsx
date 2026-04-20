@@ -20,10 +20,7 @@ export function DocumentSendModal({
   missingFields: string[]
 }) {
   const [open, setOpen] = useState(false)
-  const [mesic, setMesic] = useState(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
-  })
+  const [rok, setRok] = useState<number>(() => new Date().getFullYear())
   const [body, setBody] = useState(() => {
     const label = documentType === "dpp" ? "Dohodu o provedení práce (DPP)" : "Prohlášení poplatníka"
     return `Dobrý den,\n\nv příloze Vám zasíláme ${label} k podpisu.\n\nProsím vytiskněte, podepište a pošlete zpět naskenovaný dokument.\n\nDěkujeme`
@@ -39,7 +36,7 @@ export function DocumentSendModal({
       const result = await sendDocumentAction({
         brigadnik_id: brigadnikId,
         document_type: documentType,
-        mesic,
+        rok,
         body_html: `<div>${body.replace(/\n/g, "<br/>")}</div>`,
       })
 
@@ -53,7 +50,7 @@ export function DocumentSendModal({
     })
   }
 
-  const mesicLabel = new Date(mesic).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })
+  const rokLabel = `rok ${rok}`
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -69,13 +66,15 @@ export function DocumentSendModal({
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          {/* Month selector */}
+          {/* Year selector (F-0013: per-rok) */}
           <div>
-            <label className="text-sm font-medium">Měsíc</label>
+            <label className="text-sm font-medium">Rok</label>
             <input
-              type="month"
-              value={mesic.slice(0, 7)}
-              onChange={(e) => setMesic(`${e.target.value}-01`)}
+              type="number"
+              min={2020}
+              max={2100}
+              value={rok}
+              onChange={(e) => setRok(Number(e.target.value) || new Date().getFullYear())}
               className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
             />
           </div>
@@ -120,7 +119,7 @@ export function DocumentSendModal({
 
           {/* PDF preview info */}
           <div className="text-xs text-muted-foreground bg-muted rounded-lg p-2">
-            📎 {label}_{brigadnikName.replace(/\s/g, "_")}_{mesic.slice(0, 7)}.pdf bude vygenerováno a přiloženo automaticky
+            📎 {label}_{brigadnikName.replace(/\s/g, "_")}_{rok}.pdf bude vygenerováno a přiloženo automaticky ({rokLabel})
           </div>
 
           {/* Actions */}
