@@ -94,6 +94,6 @@ export const VZDELANI_OPTIONS = [
 ] as const
 
 export const TYP_POZICE_OPTIONS = [
-  "barman", "vstupar", "satnar", "hostesa",
-  "bezpecnost", "uklid", "produkce", "koordinator",
+  "barman", "vstupář", "šatnář", "hosteska",
+  "bezpečnost", "úklid", "produkce", "koordinátor",
 ] as const

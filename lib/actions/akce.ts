@@ -25,7 +25,7 @@ export async function getAkce(filter?: { mesic?: string }) {
   let query = supabase
     .from("akce")
     .select("*, nabidka:nabidky(id, nazev), prirazeni_count:prirazeni(count)")
-    .order("datum", { ascending: false })
+    .order("datum", { ascending: true })
 
   if (filter?.mesic) {
     const start = `${filter.mesic}-01`
