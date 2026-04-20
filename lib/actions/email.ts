@@ -37,14 +37,14 @@ export async function sendEmailAction(input: unknown): Promise<SendEmailResult> 
   // Get current user info for signature
   const { data: currentUser } = await supabase
     .from("users")
-    .select("id, jmeno, prijmeni, role")
+    .select("id, jmeno, prijmeni, role, podpis, pridat_logo")
     .eq("auth_user_id", user.id)
     .single()
 
-  // Append signature (graceful fallback if user record not found)
-  const signature = currentUser
-    ? `<br><br>--<br>${currentUser.jmeno} ${currentUser.prijmeni}<br>Crewmate`
-    : `<br><br>--<br>Crewmate`
+  // Append signature (graceful fallback if user record not found).
+  // HF4: pokud user má pridat_logo=true, prepend Crewmate logo img.
+  const { buildUserSignature } = await import("@/lib/utils/email-signature")
+  const signature = buildUserSignature(currentUser)
   const fullHtml = body_html + signature
 
   try {

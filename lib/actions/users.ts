@@ -100,9 +100,10 @@ export async function createUser(formData: FormData) {
  * max 1000 znaků (Zod). Audit log pokud sanitizace něco stripla (XSS attempt).
  */
 export async function updateUserPodpis(
-  podpis: string
+  podpis: string,
+  pridatLogo: boolean = false
 ): Promise<{ success: true; stripped?: number } | { error: string }> {
-  const parsed = updateUserPodpisSchema.safeParse({ podpis })
+  const parsed = updateUserPodpisSchema.safeParse({ podpis, pridat_logo: pridatLogo })
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Neplatný podpis" }
   }
@@ -124,7 +125,10 @@ export async function updateUserPodpis(
 
   const { error } = await supabase
     .from("users")
-    .update({ podpis: sanitized.sanitized })
+    .update({
+      podpis: sanitized.sanitized,
+      pridat_logo: parsed.data.pridat_logo,
+    })
     .eq("id", internalUser.id)
 
   if (error) return { error: error.message }
@@ -151,18 +155,24 @@ export async function updateUserPodpis(
  * odeslání emailu (edge case 8 — změna podpisu uprostřed compose se projeví).
  */
 export async function getUserPodpis(userId: string): Promise<string> {
+  const { prependCrewmateLogo } = await import("@/lib/utils/email-signature")
+
   const admin = createAdminClient()
   const { data } = await admin
     .from("users")
-    .select("jmeno, prijmeni, podpis")
+    .select("jmeno, prijmeni, podpis, pridat_logo")
     .eq("id", userId)
     .single()
 
   if (!data) return "Tým Crewmate"
 
   const podpis = (data.podpis ?? "").trim()
-  if (podpis.length > 0) return podpis
-  return `${data.jmeno} ${data.prijmeni}, tým Crewmate`
+  const base =
+    podpis.length > 0 ? podpis : `${data.jmeno} ${data.prijmeni}, tým Crewmate`
+
+  return (data as { pridat_logo?: boolean }).pridat_logo
+    ? prependCrewmateLogo(base)
+    : base
 }
 
 export async function toggleUserActive(userId: string, aktivni: boolean) {

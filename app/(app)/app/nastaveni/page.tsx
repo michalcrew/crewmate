@@ -37,7 +37,7 @@ export default async function NastaveniPage() {
   const { data: currentUser } = authUser
     ? await supabase
         .from("users")
-        .select("id, jmeno, prijmeni, podpis")
+        .select("id, jmeno, prijmeni, podpis, pridat_logo")
         .eq("auth_user_id", authUser.id)
         .single()
     : { data: null }
@@ -74,6 +74,9 @@ export default async function NastaveniPage() {
               </p>
               <PodpisForm
                 defaultPodpis={currentUser?.podpis ?? ""}
+                defaultPridatLogo={
+                  (currentUser as { pridat_logo?: boolean } | null)?.pridat_logo ?? false
+                }
                 fallback={podpisFallback}
               />
             </CardContent>

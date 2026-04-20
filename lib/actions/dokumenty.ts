@@ -6,7 +6,18 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { decrypt } from "@/lib/utils/crypto"
 import { escapeHtml, isAllowedFileType, MAX_FILE_SIZE } from "@/lib/utils/sanitize"
 import { sendGmailMessage } from "@/lib/email/gmail-send"
+import { VZDELANI_OPTIONS } from "@/lib/constants"
 import { getOrCreateSmluvniStav, updateDppStav, updateProhlaseniStav, signDpp, signProhlaseni } from "./smluvni-stav"
+
+/**
+ * HF4 — mapuje kód vzdělání (A..V, nevim) na čitelný label pro DPP PDF.
+ * Pokud field již obsahuje full label, pouze jej vrátí.
+ */
+function mapVzdelaniLabel(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const match = VZDELANI_OPTIONS.find((o) => o.value === raw)
+  return match?.label ?? raw
+}
 
 /**
  * F-0013: všechny DPP/prohlášení akce jsou per-rok (INT 2020..2100).
@@ -261,17 +272,31 @@ export async function sendDppEmail(brigadnikId: string, rok: number) {
   try { if (brigadnik.cislo_op) cislo_op = decrypt(brigadnik.cislo_op) } catch { cislo_op = brigadnik.cislo_op ?? "" }
 
   const { generateDppPdf } = await import("@/lib/pdf/generate-dpp-pdf")
+  const trvaleBydliste =
+    brigadnik.adresa ??
+    [brigadnik.ulice_cp, brigadnik.psc, brigadnik.mesto_bydliste, brigadnik.zeme]
+      .filter(Boolean)
+      .join(", ")
+
   const pdfBuffer = await generateDppPdf({
     jmeno: brigadnik.jmeno,
     prijmeni: brigadnik.prijmeni,
     rodne_cislo,
+    rodne_jmeno: brigadnik.rodne_jmeno ?? null,
+    rodne_prijmeni: brigadnik.rodne_prijmeni ?? null,
+    trvale_bydliste: trvaleBydliste,
+    korespondencni_adresa: brigadnik.korespondencni_adresa ?? null,
     datum_narozeni: brigadnik.datum_narozeni ?? "",
-    adresa: brigadnik.adresa ?? "",
-    cislo_op,
-    zdravotni_pojistovna: brigadnik.zdravotni_pojistovna ?? "",
+    misto_narozeni: brigadnik.misto_narozeni ?? null,
     cislo_uctu: brigadnik.cislo_uctu ?? "",
     kod_banky: brigadnik.kod_banky ?? "",
-    mesicLabel: rokLabel,
+    email: brigadnik.email ?? "",
+    telefon: brigadnik.telefon ?? "",
+    zdravotni_pojistovna: brigadnik.zdravotni_pojistovna ?? "",
+    cislo_op,
+    vzdelani: mapVzdelaniLabel(brigadnik.vzdelani),
+    rok,
+    datum_podpisu: new Date().toLocaleDateString("cs-CZ"),
   })
 
   const pdfFilename = `DPP_${brigadnik.prijmeni}_${brigadnik.jmeno}_${rok}.pdf`

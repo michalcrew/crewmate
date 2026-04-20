@@ -8,6 +8,7 @@ import { escapeHtml } from "@/lib/utils/sanitize"
 import { sendGmailMessage } from "@/lib/email/gmail-send"
 import { sendDocumentSchema, classifyAttachmentSchema } from "@/lib/schemas/email"
 import { validateDPPFields, validateProhlaseniFields } from "@/lib/documents/dpp-data-validator"
+import { VZDELANI_OPTIONS } from "@/lib/constants"
 import {
   getOrCreateSmluvniStav,
   updateDppStav,
@@ -78,17 +79,35 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
   let pdfBuffer: Buffer
 
   try {
+    const trvaleBydliste =
+      brigadnik.adresa ??
+      [brigadnik.ulice_cp, brigadnik.psc, brigadnik.mesto_bydliste, brigadnik.zeme]
+        .filter(Boolean)
+        .join(", ")
+    const vzdelaniLabel = brigadnik.vzdelani
+      ? VZDELANI_OPTIONS.find((o) => o.value === brigadnik.vzdelani)?.label ??
+        brigadnik.vzdelani
+      : null
+
     pdfBuffer = await generateDppPdf({
       jmeno: brigadnik.jmeno,
       prijmeni: brigadnik.prijmeni,
       rodne_cislo,
+      rodne_jmeno: brigadnik.rodne_jmeno ?? null,
+      rodne_prijmeni: brigadnik.rodne_prijmeni ?? null,
+      trvale_bydliste: trvaleBydliste,
+      korespondencni_adresa: brigadnik.korespondencni_adresa ?? null,
       datum_narozeni: brigadnik.datum_narozeni ?? "",
-      adresa: brigadnik.adresa ?? [brigadnik.ulice_cp, brigadnik.psc, brigadnik.mesto_bydliste].filter(Boolean).join(", "),
-      cislo_op,
-      zdravotni_pojistovna: brigadnik.zdravotni_pojistovna ?? "",
+      misto_narozeni: brigadnik.misto_narozeni ?? null,
       cislo_uctu: brigadnik.cislo_uctu ?? "",
       kod_banky: brigadnik.kod_banky ?? "",
-      mesicLabel: rokLabel,
+      email: brigadnik.email ?? "",
+      telefon: brigadnik.telefon ?? "",
+      zdravotni_pojistovna: brigadnik.zdravotni_pojistovna ?? "",
+      cislo_op,
+      vzdelani: vzdelaniLabel,
+      rok,
+      datum_podpisu: new Date().toLocaleDateString("cs-CZ"),
     })
   } catch (err) {
     console.error("PDF generation error:", err)
@@ -109,12 +128,13 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
   // Get current user for signature
   const { data: currentUser } = await supabase
     .from("users")
-    .select("id, jmeno, prijmeni")
+    .select("id, jmeno, prijmeni, podpis, pridat_logo")
     .eq("auth_user_id", user.id)
     .single()
 
-  // Append signature to email body
-  const signature = `<br><br>--<br>${currentUser?.jmeno ?? ""} ${currentUser?.prijmeni ?? ""}<br>Crewmate`
+  // Append signature to email body. HF4: respektuje users.pridat_logo.
+  const { buildUserSignature } = await import("@/lib/utils/email-signature")
+  const signature = buildUserSignature(currentUser)
   const fullHtml = body_html + signature
 
   const subject = document_type === "dpp"
