@@ -8,7 +8,7 @@ import { FileText, Mail, Upload } from "lucide-react"
 import { generateDpp, generateProhlaseni, sendDppEmail, uploadPodpis } from "@/lib/actions/dokumenty"
 import { toast } from "sonner"
 
-export function GenerateDppButton({ brigadnikId, mesic }: { brigadnikId: string; mesic: string }) {
+export function GenerateDppButton({ brigadnikId, rok }: { brigadnikId: string; rok: number }) {
   const [isPending, startTransition] = useTransition()
 
   return (
@@ -18,19 +18,19 @@ export function GenerateDppButton({ brigadnikId, mesic }: { brigadnikId: string;
       disabled={isPending}
       onClick={() => {
         startTransition(async () => {
-          const result = await generateDpp(brigadnikId, mesic)
+          const result = await generateDpp(brigadnikId, rok)
           if (result.error) toast.error(result.error)
           else toast.success("DPP vygenerováno!")
         })
       }}
     >
       <FileText className="h-4 w-4 mr-1" />
-      {isPending ? "Generuji..." : "Vygenerovat DPP"}
+      {isPending ? "Generuji..." : `Vygenerovat DPP ${rok}`}
     </Button>
   )
 }
 
-export function GenerateProhlaseniButton({ brigadnikId, mesic }: { brigadnikId: string; mesic: string }) {
+export function GenerateProhlaseniButton({ brigadnikId, rok }: { brigadnikId: string; rok: number }) {
   const [isPending, startTransition] = useTransition()
 
   return (
@@ -40,19 +40,19 @@ export function GenerateProhlaseniButton({ brigadnikId, mesic }: { brigadnikId: 
       disabled={isPending}
       onClick={() => {
         startTransition(async () => {
-          const result = await generateProhlaseni(brigadnikId, mesic)
+          const result = await generateProhlaseni(brigadnikId, rok)
           if (result.error) toast.error(result.error)
           else toast.success("Prohlášení vygenerováno!")
         })
       }}
     >
       <FileText className="h-4 w-4 mr-1" />
-      {isPending ? "Generuji..." : "Vygenerovat prohlášení"}
+      {isPending ? "Generuji..." : `Vygenerovat prohlášení ${rok}`}
     </Button>
   )
 }
 
-export function SendDppButton({ brigadnikId, mesic }: { brigadnikId: string; mesic: string }) {
+export function SendDppButton({ brigadnikId, rok }: { brigadnikId: string; rok: number }) {
   const [isPending, startTransition] = useTransition()
 
   return (
@@ -62,26 +62,26 @@ export function SendDppButton({ brigadnikId, mesic }: { brigadnikId: string; mes
       disabled={isPending}
       onClick={() => {
         startTransition(async () => {
-          const result = await sendDppEmail(brigadnikId, mesic)
+          const result = await sendDppEmail(brigadnikId, rok)
           if (result.error) toast.error(result.error)
           else toast.success("DPP odeslána emailem!")
         })
       }}
     >
       <Mail className="h-4 w-4 mr-1" />
-      {isPending ? "Odesílám..." : "Odeslat DPP"}
+      {isPending ? "Odesílám..." : `Odeslat DPP ${rok}`}
     </Button>
   )
 }
 
 export function UploadPodpisForm({
   brigadnikId,
-  mesic,
+  rok,
   typ,
   label,
 }: {
   brigadnikId: string
-  mesic: string
+  rok: number
   typ: "dpp_podpis" | "prohlaseni_podpis"
   label: string
 }) {
@@ -104,7 +104,7 @@ export function UploadPodpisForm({
       className="flex items-end gap-2"
     >
       <input type="hidden" name="brigadnik_id" value={brigadnikId} />
-      <input type="hidden" name="mesic" value={mesic} />
+      <input type="hidden" name="rok" value={rok} />
       <input type="hidden" name="typ" value={typ} />
       <div className="space-y-1 flex-1">
         <Label className="text-xs">{label}</Label>

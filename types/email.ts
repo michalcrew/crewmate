@@ -105,14 +105,14 @@ export interface SendEmailInput {
 export interface SendDocumentInput {
   brigadnik_id: string
   document_type: 'dpp' | 'prohlaseni'
-  mesic: string // YYYY-MM-01
+  rok: number // F-0013: per-rok (2020..2100)
   body_html: string
 }
 
 export interface ClassifyAttachmentInput {
   attachment_id: string
   classified_as: AttachmentClassification
-  mesic?: string
+  rok?: number // F-0013: per-rok
 }
 
 export interface UpdateConversationInput {

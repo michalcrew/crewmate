@@ -12,6 +12,7 @@ import { AddUserDialog } from "@/components/settings/add-user-dialog"
 import { UserActions } from "@/components/settings/user-actions"
 import { AddSablonaDialog } from "@/components/settings/edit-sablona-dialog"
 import { SablonaActions } from "@/components/settings/sablona-actions"
+import { PodpisForm } from "@/components/settings/podpis-form"
 import { PageHeader } from "@/components/shared/page-header"
 
 export const metadata: Metadata = { title: "Nastavení" }
@@ -31,18 +32,53 @@ export default async function NastaveniPage() {
     .order("created_at", { ascending: false })
     .limit(100)
 
+  // F-0013: aktuální uživatel pro "Můj profil" tab (podpis).
+  const { data: { user: authUser } } = await supabase.auth.getUser()
+  const { data: currentUser } = authUser
+    ? await supabase
+        .from("users")
+        .select("id, jmeno, prijmeni, podpis")
+        .eq("auth_user_id", authUser.id)
+        .single()
+    : { data: null }
+
   const isAdmin = currentRole === "admin"
+  const podpisFallback = currentUser
+    ? `${currentUser.jmeno} ${currentUser.prijmeni}, tým Crewmate`
+    : "Tým Crewmate"
 
   return (
     <div className="space-y-6">
       <PageHeader title="Nastavení" description="Správa uživatelů, šablon a konfigurace" />
 
-      <Tabs defaultValue="uzivatele">
+      <Tabs defaultValue="profil">
         <TabsList>
+          <TabsTrigger value="profil">Můj profil</TabsTrigger>
           <TabsTrigger value="uzivatele">Uživatelé</TabsTrigger>
           {isAdmin && <TabsTrigger value="sablony">Šablony DPP / Prohlášení</TabsTrigger>}
           {isAdmin && <TabsTrigger value="log">Activity Log</TabsTrigger>}
         </TabsList>
+
+        {/* Můj profil — podpis do emailů (F-0013 US-1E-1) */}
+        <TabsContent value="profil" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Můj emailový podpis</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Podpis se automaticky vloží na konec každého emailu, který
+                odešlete (DPP, prohlášení, vlastní zpráva). Pokud necháte pole
+                prázdné, použije se výchozí podpis{" "}
+                <em>„{podpisFallback}“</em>.
+              </p>
+              <PodpisForm
+                defaultPodpis={currentUser?.podpis ?? ""}
+                fallback={podpisFallback}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Uživatelé */}
         <TabsContent value="uzivatele" className="mt-4">

@@ -8,7 +8,13 @@ import { escapeHtml } from "@/lib/utils/sanitize"
 import { sendGmailMessage } from "@/lib/email/gmail-send"
 import { sendDocumentSchema, classifyAttachmentSchema } from "@/lib/schemas/email"
 import { validateDPPFields, validateProhlaseniFields } from "@/lib/documents/dpp-data-validator"
-import { getOrCreateSmluvniStav, updateDppStav, updateProhlaseniStav } from "./smluvni-stav"
+import {
+  getOrCreateSmluvniStav,
+  updateDppStav,
+  updateProhlaseniStav,
+  signDpp,
+  signProhlaseni,
+} from "./smluvni-stav"
 import type { SendEmailResult } from "@/types/email"
 
 // ============================================================
@@ -25,7 +31,7 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
     return { success: false, error: parsed.error.issues[0]?.message ?? "Neplatný vstup" }
   }
 
-  const { brigadnik_id, document_type, mesic, body_html } = parsed.data
+  const { brigadnik_id, document_type, rok, body_html } = parsed.data
 
   // Get brigadník with all fields
   const { data: brigadnik } = await supabase
@@ -36,6 +42,12 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
 
   if (!brigadnik) return { success: false, error: "Brigádník nenalezen" }
   if (!brigadnik.email) return { success: false, error: "Brigádník nemá vyplněný email" }
+  if (brigadnik.typ_brigadnika === "osvc") {
+    return { success: false, error: "OSVČ nemají DPP/prohlášení — neposíláme dokumenty" }
+  }
+
+  const mesicAnchor = `${rok}-01-01`
+  const rokLabel = `rok ${rok}`
 
   // Validate required fields
   const validation = document_type === "dpp"
@@ -61,8 +73,6 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
     cislo_op = brigadnik.cislo_op ?? ""
   }
 
-  const mesicLabel = new Date(`${mesic}`).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })
-
   // Generate PDF via React PDF
   const { generateDppPdf } = await import("@/lib/pdf/generate-dpp-pdf")
   let pdfBuffer: Buffer
@@ -78,7 +88,7 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
       zdravotni_pojistovna: brigadnik.zdravotni_pojistovna ?? "",
       cislo_uctu: brigadnik.cislo_uctu ?? "",
       kod_banky: brigadnik.kod_banky ?? "",
-      mesicLabel,
+      mesicLabel: rokLabel,
     })
   } catch (err) {
     console.error("PDF generation error:", err)
@@ -86,7 +96,7 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
   }
 
   const typLabel = document_type === "dpp" ? "DPP" : "Prohlaseni"
-  const pdfFilename = `${typLabel}_${brigadnik.prijmeni}_${brigadnik.jmeno}_${mesic.slice(0, 7)}.pdf`
+  const pdfFilename = `${typLabel}_${brigadnik.prijmeni}_${brigadnik.jmeno}_${rok}.pdf`
 
   // Upload PDF to Supabase Storage
   const adminClient = createAdminClient()
@@ -108,8 +118,8 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
   const fullHtml = body_html + signature
 
   const subject = document_type === "dpp"
-    ? `DPP k podpisu — ${mesicLabel}`
-    : `Prohlášení k podpisu — ${mesicLabel}`
+    ? `DPP k podpisu — ${rokLabel}`
+    : `Prohlášení k podpisu — ${rokLabel}`
 
   try {
     // Send via Gmail API with PDF attachment
@@ -182,7 +192,7 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
     // Create/update document_record
     await supabase.from("document_records").upsert({
       brigadnik_id,
-      mesic,
+      mesic: mesicAnchor,
       typ: document_type,
       stav: "odeslano",
       email_message_id: msg!.id,
@@ -190,8 +200,8 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
       odeslano_at: new Date().toISOString(),
     }, { onConflict: "brigadnik_id,mesic,typ" })
 
-    // Update smluvni_stav
-    const smluvniStav = await getOrCreateSmluvniStav(brigadnik_id, mesic.slice(0, 7))
+    // Update smluvni_stav (per-rok)
+    const smluvniStav = await getOrCreateSmluvniStav(brigadnik_id, rok)
     if (document_type === "dpp") {
       await updateDppStav(smluvniStav.id, brigadnik_id, "odeslano")
     } else {
@@ -204,7 +214,7 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
       typ: document_type,
       nazev: pdfFilename,
       storage_path: storagePath,
-      mesic,
+      mesic: mesicAnchor,
       velikost: pdfBuffer.length,
       mime_type: "application/pdf",
       nahral_user_id: currentUser?.id,
@@ -215,8 +225,8 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
       brigadnik_id,
       user_id: currentUser?.id,
       typ: "dokument_odeslan",
-      popis: `${typLabel} odeslán emailem na ${brigadnik.email} (${mesicLabel})`,
-      metadata: { thread_id: dbThreadId, message_id: msg?.id, document_type, mesic },
+      popis: `${typLabel} odeslán emailem na ${brigadnik.email} (${rokLabel})`,
+      metadata: { thread_id: dbThreadId, message_id: msg?.id, document_type, rok },
     })
 
     revalidatePath("/app/emaily")
@@ -241,7 +251,8 @@ export async function classifyAttachmentAction(input: unknown) {
   const parsed = classifyAttachmentSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Neplatný vstup" }
 
-  const { attachment_id, classified_as, mesic } = parsed.data
+  const { attachment_id, classified_as, rok } = parsed.data
+  const mesicAnchor = rok ? `${rok}-01-01` : null
 
   // Get current user
   const { data: currentUser } = await supabase
@@ -265,29 +276,24 @@ export async function classifyAttachmentAction(input: unknown) {
     email_messages: { email_threads: { brigadnik_id: string } }
   })?.email_messages?.email_threads?.brigadnik_id
 
-  // Update document_records + smluvni_stav for signed documents
-  if (brigadnik_id && mesic && ["dpp_podpis", "prohlaseni_podpis"].includes(classified_as)) {
+  // Update document_records + smluvni_stav for signed documents (F-0013 per-rok)
+  if (brigadnik_id && rok && mesicAnchor && ["dpp_podpis", "prohlaseni_podpis"].includes(classified_as)) {
     const docType = classified_as === "dpp_podpis" ? "dpp" : "prohlaseni"
 
     await supabase.from("document_records").upsert({
       brigadnik_id,
-      mesic,
+      mesic: mesicAnchor,
       typ: docType,
       stav: "podepsano",
       received_attachment_id: attachment_id,
       podepsano_at: new Date().toISOString(),
     }, { onConflict: "brigadnik_id,mesic,typ" })
 
-    const smluvniStav = await import("./smluvni-stav").then(m =>
-      m.getOrCreateSmluvniStav(brigadnik_id, mesic.slice(0, 7))
-    )
-
+    // F-0013 D-03: signDpp/signProhlaseni volá maybeAutoTransitionPipeline
     if (docType === "dpp") {
-      const { updateDppStav: update } = await import("./smluvni-stav")
-      await update(smluvniStav.id, brigadnik_id, "podepsano")
+      await signDpp(brigadnik_id, rok)
     } else {
-      const { updateProhlaseniStav: update } = await import("./smluvni-stav")
-      await update(smluvniStav.id, brigadnik_id, "podepsano")
+      await signProhlaseni(brigadnik_id, rok)
     }
   }
 
@@ -297,7 +303,7 @@ export async function classifyAttachmentAction(input: unknown) {
     user_id: currentUser?.id,
     typ: "dokument_klasifikovan",
     popis: `Příloha klasifikována jako ${classified_as}`,
-    metadata: { attachment_id, classified_as, mesic },
+    metadata: { attachment_id, classified_as, rok },
   })
 
   revalidatePath("/app/emaily")

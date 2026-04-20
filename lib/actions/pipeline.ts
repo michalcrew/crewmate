@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export async function getPipelineByNabidka(nabidkaId: string) {
   const supabase = await createClient()
@@ -77,6 +78,68 @@ export async function updatePipelineStav(
 
   revalidatePath(`/app/nabidky/${nabidkaId}`)
   return { success: true }
+}
+
+/**
+ * F-0013 D-F0013-03 — auto-transition helper.
+ *
+ * Přesune všechny `pipeline_entries` daného brigádníka ze stavu
+ * `prijaty_nehotova_admin` do `prijaty_vse_vyreseno` a zapíše audit log
+ * s důvodem (`dpp_podepsano` | `osvc_flag`).
+ *
+ * Volaný interně z:
+ *  - signDpp() po podpisu DPP
+ *  - signProhlaseni() po podpisu prohlášení (nezávisle — auditní completeness)
+ *  - updateBrigadnikTyp('osvc') po přepnutí na OSVČ
+ *  - submitDotaznik() pokud typ=osvc a brigádník je v pipeline
+ *
+ * Idempotentní: druhé volání nic neflipne (WHERE stav='prijaty_nehotova_admin').
+ * Jednosměrný — nikdy se nevrací zpět.
+ */
+export async function maybeAutoTransitionPipeline(
+  brigadnikId: string,
+  reason: "dpp_podepsano" | "prohlaseni_podepsano" | "osvc_flag" = "dpp_podepsano"
+): Promise<{ transitioned: string[]; nabidkaIds: string[] }> {
+  const admin = createAdminClient()
+
+  const { data: entries } = await admin
+    .from("pipeline_entries")
+    .select("id, nabidka_id")
+    .eq("brigadnik_id", brigadnikId)
+    .eq("stav", "prijaty_nehotova_admin")
+
+  const toFlip = entries ?? []
+  if (toFlip.length === 0) return { transitioned: [], nabidkaIds: [] }
+
+  const ids = toFlip.map(e => e.id)
+  const nabidkaIds = [...new Set(toFlip.map(e => e.nabidka_id))]
+
+  const { error: updateErr } = await admin
+    .from("pipeline_entries")
+    .update({ stav: "prijaty_vse_vyreseno" })
+    .in("id", ids)
+
+  if (updateErr) {
+    console.error("maybeAutoTransitionPipeline update error:", updateErr)
+    return { transitioned: [], nabidkaIds: [] }
+  }
+
+  // 1 audit entry per dotčenou pipeline_entry (per D-F0013-06 per-row granularity).
+  const historieRows = toFlip.map(e => ({
+    brigadnik_id: brigadnikId,
+    nabidka_id: e.nabidka_id,
+    typ: "pipeline_auto_transition",
+    popis: `Auto přechod NH→VV (${reason})`,
+    metadata: { reason, pipeline_entry_id: e.id },
+  }))
+
+  await admin.from("historie").insert(historieRows)
+
+  for (const nabidkaId of nabidkaIds) {
+    revalidatePath(`/app/nabidky/${nabidkaId}`)
+  }
+
+  return { transitioned: ids, nabidkaIds }
 }
 
 export async function addBrigadnikToPipeline(

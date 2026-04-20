@@ -22,10 +22,7 @@ export function NewEmailDialog({
   const [emailType, setEmailType] = useState<EmailType>("plain")
   const [subject, setSubject] = useState("")
   const [body, setBody] = useState("")
-  const [mesic, setMesic] = useState(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
-  })
+  const [rok, setRok] = useState<number>(() => new Date().getFullYear())
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -51,7 +48,7 @@ export function NewEmailDialog({
         const result = await sendDocumentAction({
           brigadnik_id: selectedBrigadnik,
           document_type: emailType,
-          mesic,
+          rok,
           body_html: `<div>${(body || defaultBody).replace(/\n/g, "<br/>")}</div>`,
         })
 
@@ -184,14 +181,16 @@ export function NewEmailDialog({
             </div>
           </div>
 
-          {/* Month selector for DPP/prohlášení */}
+          {/* Year selector for DPP/prohlášení (F-0013: per-rok) */}
           {(emailType === "dpp" || emailType === "prohlaseni") && (
             <div>
-              <label className="text-sm font-medium">Měsíc</label>
+              <label className="text-sm font-medium">Rok</label>
               <input
-                type="month"
-                value={mesic.slice(0, 7)}
-                onChange={(e) => setMesic(`${e.target.value}-01`)}
+                type="number"
+                min={2020}
+                max={2100}
+                value={rok}
+                onChange={(e) => setRok(Number(e.target.value) || new Date().getFullYear())}
                 className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
               />
               <p className="text-xs text-muted-foreground mt-1">

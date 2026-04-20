@@ -65,9 +65,9 @@ export default async function BrigadniciPage({
                 </TableHeader>
                 <TableBody>
                   {brigadnici.map((b) => {
-                    const dppCurrentState = DPP_STATES[((b as { dpp_tento_mesic?: string }).dpp_tento_mesic ?? "zadny") as keyof typeof DPP_STATES]
+                    const dppCurrentState = DPP_STATES[((b as { dpp_tento_rok?: string }).dpp_tento_rok ?? "zadny") as keyof typeof DPP_STATES]
                     const hasData = b.dotaznik_vyplnen
-                    const hasDpp = (b as { dpp_tento_mesic?: string }).dpp_tento_mesic === "podepsano"
+                    const hasDpp = (b as { dpp_tento_rok?: string }).dpp_tento_rok === "podepsano"
                     const needsAction = !hasData || !hasDpp
                     const rating = Number(b.prumerne_hodnoceni)
 

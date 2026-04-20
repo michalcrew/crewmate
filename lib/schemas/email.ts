@@ -11,7 +11,7 @@ export const sendEmailSchema = z.object({
 export const sendDocumentSchema = z.object({
   brigadnik_id: z.string().uuid(),
   document_type: z.enum(["dpp", "prohlaseni"]),
-  mesic: z.string().regex(/^\d{4}-\d{2}-01$/, "Měsíc musí být ve formátu YYYY-MM-01"),
+  rok: z.coerce.number().int().min(2020).max(2100),
   body_html: z.string().min(1, "Text emailu je povinný").max(100000),
 })
 
@@ -23,16 +23,16 @@ export const classifyAttachmentSchema = z
       "prohlaseni", "prohlaseni_podpis",
       "briefing", "jiny",
     ]),
-    mesic: z.string().regex(/^\d{4}-\d{2}-01$/).optional(),
+    rok: z.coerce.number().int().min(2020).max(2100).optional(),
   })
   .refine(
     (data) => {
       if (["dpp_podpis", "prohlaseni_podpis"].includes(data.classified_as)) {
-        return !!data.mesic
+        return !!data.rok
       }
       return true
     },
-    { message: "Měsíc je povinný pro klasifikaci DPP/prohlášení podpisu" }
+    { message: "Rok je povinný pro klasifikaci DPP/prohlášení podpisu" }
   )
 
 export const updateConversationSchema = z.object({
