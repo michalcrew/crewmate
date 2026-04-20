@@ -31,6 +31,16 @@
 BEGIN;
 
 -- ============================================================
+-- 0. DROP dependent views FIRST (hotfix 2026-04-22 prod run)
+--    v_brigadnici_aktualni dělá SELECT b.* z brigadnici → při DROP COLUMN student spadne.
+--    Musí být DROPped před sekcí 1 (ALTER TABLE brigadnici DROP COLUMN student).
+--    Re-create v sekci 6.
+-- ============================================================
+
+DROP VIEW IF EXISTS v_chybejici_dpp;
+DROP VIEW IF EXISTS v_brigadnici_aktualni;
+
+-- ============================================================
 -- 1. brigadnici: IČAŘ/OSVČ větev + narodnost + ruzove_prohlaseni
 --    + DROP starých nepoužívaných polí (user-approved data loss)
 -- ============================================================
@@ -260,6 +270,11 @@ ALTER TABLE smluvni_stav
 ALTER TABLE smluvni_stav
   ADD COLUMN IF NOT EXISTS rok         int,
   ADD COLUMN IF NOT EXISTS platnost_do date;
+
+-- 4.5b. HOTFIX (2026-04-22 prod run): drop mesic column BEFORE DELETE/INSERT.
+--       Původní sekce 4.7 dropuje mesic AŽ PO INSERT, ale INSERT nedodává mesic
+--       (per-rok data), tak NOT NULL constraint shodí. Musí se dropnout dřív.
+ALTER TABLE smluvni_stav DROP COLUMN IF EXISTS mesic;
 
 -- 4.6. REPLACE data: smazat staré per-měsíc, vložit nové per-rok
 --      SAFETY: DELETE + INSERT místo TRUNCATE — TRUNCATE by porušilo FK triggery
