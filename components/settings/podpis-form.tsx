@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -9,21 +9,30 @@ import { toast } from "sonner"
 
 type Props = {
   defaultPodpis: string
+  defaultPridatLogo?: boolean
   fallback: string
 }
 
 /**
  * F-0013 US-1E-1 — textarea pro úpravu vlastního podpisu (`users.podpis`).
+ * HF4 — přidán checkbox „Přidat logo Crewmate nad podpis" (`users.pridat_logo`).
  *
  * Server Action {@link updateUserPodpis} sanitizuje přes allowlist `sanitize-html`
- * (povolené tagy: <b>, <i>, <u>, <br>, <p>, <span>, <a href>, <strong>, <em>).
- * Self-only (RLS check v Server Action).
+ * (povolené tagy: <b>, <i>, <u>, <br>, <p>, <span>, <a href>, <strong>, <em>,
+ * + <img> se src whitelistem pro Crewmate logo). Self-only (RLS check v Server Action).
  */
-export function PodpisForm({ defaultPodpis, fallback }: Props) {
+export function PodpisForm({
+  defaultPodpis,
+  defaultPridatLogo = false,
+  fallback,
+}: Props) {
+  const [pridatLogo, setPridatLogo] = useState<boolean>(defaultPridatLogo)
+
   const [state, formAction, pending] = useActionState(
     async (_prev: { error?: string; success?: boolean } | null, formData: FormData) => {
       const podpis = String(formData.get("podpis") ?? "")
-      const result = await updateUserPodpis(podpis)
+      const logo = formData.get("pridat_logo") === "on"
+      const result = await updateUserPodpis(podpis, logo)
       if ("error" in result) {
         toast.error(result.error)
         return { error: result.error }
@@ -59,6 +68,26 @@ export function PodpisForm({ defaultPodpis, fallback }: Props) {
           {" "}<code>&lt;em&gt;</code>, <code>&lt;a href&gt;</code>. Skripty a styly
           jsou automaticky odstraněny. Max. 1000 znaků.
         </p>
+      </div>
+
+      <div className="flex items-start gap-2 pt-2">
+        <input
+          type="checkbox"
+          id="pridat_logo"
+          name="pridat_logo"
+          checked={pridatLogo}
+          onChange={(e) => setPridatLogo(e.target.checked)}
+          className="mt-1 h-4 w-4 rounded border-input"
+        />
+        <div>
+          <Label htmlFor="pridat_logo" className="cursor-pointer font-normal">
+            Přidat logo Crewmate nad podpis
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Logo se vloží do každého odchozího emailu jako obrázek nad podpisem
+            (velikost ~40px, bílé pozadí).
+          </p>
+        </div>
       </div>
 
       {state?.error && (

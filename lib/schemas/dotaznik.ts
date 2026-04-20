@@ -129,6 +129,8 @@ export const ukoncitDppInputSchema = z.object({
 
 export const updateUserPodpisSchema = z.object({
   podpis: z.string().max(1000, "Podpis max. 1000 znaků"),
+  // HF4: volitelný bool — pokud true, email pipeline prepend Crewmate logo.
+  pridat_logo: z.boolean().optional().default(false),
 })
 
 /**
