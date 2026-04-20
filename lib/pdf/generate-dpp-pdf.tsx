@@ -2,21 +2,30 @@ import React from "react"
 import { Document, Page, Text, View, StyleSheet, renderToBuffer, Font } from "@react-pdf/renderer"
 
 // ============================================================
-// HF4 — Font s plnou podporou české diakritiky (Latin Extended-A)
+// HF4b — Font s plnou podporou české diakritiky (Latin Extended-A)
 // ============================================================
-// Helvetica (built-in @react-pdf/renderer) nemá glyfy ř, ě, č, …
-// → registrujeme Noto Sans z Google Fonts CDN (licenčně čistý, CE subset).
-// Pokud CDN spadne v build / runtime, PDF se vygeneruje s fallbackem
-// (glyf missing = prázdný prostor), ale text zůstane validní.
+// Noto Sans TTF soubory hostované lokálně (public/fonts/).
+// Původní Google Fonts CDN URLs byly vymyšlené a vracely 404 → PDF
+// render padal. Lokální hosting = žádná CDN dependency, předvídatelná
+// latence.
+//
+// Absolutní URL via VERCEL_URL / NEXT_PUBLIC_APP_URL — @react-pdf/renderer
+// na server-side vyžaduje absolutní URL pro HTTP fetch fontu.
+const FONT_BASE_URL =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  (process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "http://localhost:3000")
+
 Font.register({
   family: "NotoSans",
   fonts: [
     {
-      src: "https://fonts.gstatic.com/s/notosans/v39/o-0IIpQlx3QUlC5A4PNb4j5Ba_2c7A.ttf",
+      src: `${FONT_BASE_URL}/fonts/NotoSans-Regular.ttf`,
       fontWeight: "normal",
     },
     {
-      src: "https://fonts.gstatic.com/s/notosans/v39/o-0NIpQlx3QUlC5A4PNjXhFVadyBx2pqPIif.ttf",
+      src: `${FONT_BASE_URL}/fonts/NotoSans-Bold.ttf`,
       fontWeight: "bold",
     },
   ],
