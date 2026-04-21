@@ -14,6 +14,7 @@ import { AddSablonaDialog } from "@/components/settings/edit-sablona-dialog"
 import { SablonaActions } from "@/components/settings/sablona-actions"
 import { PodpisForm } from "@/components/settings/podpis-form"
 import { PageHeader } from "@/components/shared/page-header"
+import { UserSazbaEditField } from "@/components/hodiny/user-sazba-edit-field"
 
 export const metadata: Metadata = { title: "Nastavení" }
 
@@ -99,6 +100,7 @@ export default async function NastaveniPage() {
                       <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Stav</TableHead>
+                      {isAdmin && <TableHead>Sazba (Kč/h)</TableHead>}
                       {isAdmin && <TableHead>Akce</TableHead>}
                     </TableRow>
                   </TableHeader>
@@ -115,6 +117,14 @@ export default async function NastaveniPage() {
                         <TableCell>
                           <Badge variant={u.aktivni ? "default" : "secondary"}>{u.aktivni ? "Aktivní" : "Neaktivní"}</Badge>
                         </TableCell>
+                        {isAdmin && (
+                          <TableCell>
+                            <UserSazbaEditField
+                              userId={u.id}
+                              initialSazba={(u as { sazba_kc_hod?: number | null }).sazba_kc_hod ?? null}
+                            />
+                          </TableCell>
+                        )}
                         {isAdmin && <TableCell><UserActions userId={u.id} aktivni={u.aktivni} /></TableCell>}
                       </TableRow>
                     ))}

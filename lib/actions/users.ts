@@ -179,6 +179,120 @@ export async function getUserPodpis(userId: string): Promise<string> {
     : base
 }
 
+// ================================================================
+// F-0019 — Sazby (hodinové) per user
+// ================================================================
+
+const sazbaSchema = z
+  .union([z.number(), z.null()])
+  .refine(
+    (v) => v === null || (Number.isFinite(v) && v >= 0 && v <= 9999.99),
+    "Sazba musí být mezi 0 a 9999,99 Kč/hod (nebo prázdná)",
+  )
+
+/**
+ * F-0019 — Admin-only update hodinové sazby náborářky.
+ * Audit `sazba_zmenena` s before/after v metadata (sazba v auditu smí být,
+ * mimo audit log se nikdy neloguje čitelně — secret handling rule).
+ */
+export async function updateUserSazba(
+  userId: string,
+  sazba: number | null,
+): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const role = await getCurrentUserRole()
+  if (role !== "admin") return { error: "Nemáte oprávnění (jen admin)" }
+
+  if (!userId) return { error: "Chybí ID uživatele" }
+  const parsed = sazbaSchema.safeParse(sazba)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatná sazba" }
+  }
+
+  const admin = createAdminClient()
+
+  // Before snapshot pro audit
+  const { data: before } = await admin
+    .from("users")
+    .select("id, sazba_kc_hod, jmeno, prijmeni")
+    .eq("id", userId)
+    .single()
+
+  if (!before) return { error: "Uživatel nenalezen" }
+
+  const { error } = await admin
+    .from("users")
+    .update({ sazba_kc_hod: parsed.data })
+    .eq("id", userId)
+
+  if (error) return { error: error.message }
+
+  // Actor = internal user id
+  const { data: actor } = await admin
+    .from("users")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single()
+
+  await admin.from("historie").insert({
+    user_id: userId, // afected
+    typ: "sazba_zmenena",
+    popis: `Hodinová sazba změněna (${(before as { jmeno: string }).jmeno} ${(before as { prijmeni: string }).prijmeni})`,
+    metadata: {
+      user_id_affected: userId,
+      actor_user_id: (actor as { id?: string } | null)?.id ?? null,
+      old_sazba: (before as { sazba_kc_hod: number | null }).sazba_kc_hod,
+      new_sazba: parsed.data,
+    },
+  })
+
+  revalidatePath("/app/nastaveni")
+  revalidatePath("/app/hodiny")
+  revalidatePath("/app/hodiny/prehled")
+  return { success: true }
+}
+
+/**
+ * F-0019 — Načte hodinovou sazbu. Self (kdokoli) NEBO admin (libovolný user).
+ * Non-admin caller s cizím userId → error (privacy guard per D-F0019-09).
+ */
+export async function getUserSazba(
+  userId?: string,
+): Promise<{ sazba_kc_hod: number | null } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const admin = createAdminClient()
+  const { data: me } = await admin
+    .from("users")
+    .select("id, role")
+    .eq("auth_user_id", user.id)
+    .single()
+
+  if (!me) return { error: "Profil nenalezen" }
+
+  const meId = (me as { id: string }).id
+  const meRole = (me as { role: string }).role
+  const targetId = userId ?? meId
+
+  if (targetId !== meId && meRole !== "admin") {
+    return { error: "Nemáte oprávnění" }
+  }
+
+  const { data } = await admin
+    .from("users")
+    .select("sazba_kc_hod")
+    .eq("id", targetId)
+    .single()
+
+  if (!data) return { error: "Uživatel nenalezen" }
+  return { sazba_kc_hod: (data as { sazba_kc_hod: number | null }).sazba_kc_hod }
+}
+
 export async function toggleUserActive(userId: string, aktivni: boolean) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
