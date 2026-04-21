@@ -11,6 +11,11 @@ import {
 } from "@/lib/schemas/dotaznik"
 import { DOKUMENTACNI_STAV_RANK, RANK_TO_DOKUMENTACNI_STAV } from "@/lib/schemas/hodnoceni"
 import { maybeAutoTransitionPipeline } from "./pipeline"
+import {
+  buildDokumentacniPredicate,
+  type AlertFilterKey,
+  type EnrichedBrigadnikForFilter,
+} from "./dashboard-filters"
 
 const brigadnikSchema = z.object({
   jmeno: z.string().min(1, "Jméno je povinné"),
@@ -28,6 +33,10 @@ export async function getBrigadnici(filter?: {
   typFilter?: "all" | "brigadnik" | "osvc"
   /** F-0016: multi-select dokumentační status (global = MAX priority přes pipeline). */
   stavFilter?: string[]
+  /** F-0017: preset filter z dashboard alertů (bez_dpp, bez_prohlaseni, ...).
+   *  Aplikuje se AND s ostatními filtry. Sdílí predicate s `getDashboardAlerts`
+   *  (alert count ↔ filtrovaný list count musí match). */
+  filterKey?: AlertFilterKey
 }) {
   const supabase = await createClient()
   let query = supabase
@@ -134,7 +143,16 @@ export async function getBrigadnici(filter?: {
       ? enriched.filter(b => filter.stavFilter!.includes(b.global_dokumentacni_stav))
       : enriched
 
-    filteredByStav.sort((a, b) => {
+    // F-0017: aplikace preset filter key (bez_dpp, bez_prohlaseni, ...).
+    // AND s předchozími filtry. Sdílený predikát s getDashboardAlerts →
+    // zaručuje count parity (QA-critical).
+    const filteredByKey = filter?.filterKey
+      ? filteredByStav.filter(b =>
+          buildDokumentacniPredicate(filter.filterKey!)(b as EnrichedBrigadnikForFilter)
+        )
+      : filteredByStav
+
+    filteredByKey.sort((a, b) => {
       if (b.pocet_akci !== a.pocet_akci) return b.pocet_akci - a.pocet_akci
       const ratingA = Number(a.prumerne_hodnoceni) || 0
       const ratingB = Number(b.prumerne_hodnoceni) || 0
@@ -142,7 +160,7 @@ export async function getBrigadnici(filter?: {
       return (a.prijmeni ?? "").localeCompare(b.prijmeni ?? "")
     })
 
-    return filteredByStav
+    return filteredByKey
   } catch {
     return (data ?? []).map(b => ({
       ...b,

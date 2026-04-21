@@ -7,8 +7,13 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { getBrigadnici } from "@/lib/actions/brigadnici"
+import {
+  AlertFilterKeySchema,
+  FILTER_KEY_LABELS,
+} from "@/lib/actions/dashboard-filters"
 import { BrigadniciSearch } from "@/components/brigadnici/brigadnici-search"
 import { BrigadniciListFilters } from "@/components/brigadnici/brigadnici-list-filters"
+import { BrigadniciQuickFilters } from "@/components/brigadnici/brigadnici-quick-filters"
 import { FakturantBadge } from "@/components/brigadnici/fakturant-badge"
 import { DokumentacniStavSelect } from "@/components/brigadnici/dokumentacni-stav-select"
 import { StarRating } from "@/components/ui/star-rating"
@@ -22,12 +27,16 @@ export const metadata: Metadata = {
 export default async function BrigadniciPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; typ?: string; stav?: string }>
+  searchParams: Promise<{
+    q?: string
+    typ?: string
+    stav?: string
+    filter?: string
+  }>
 }) {
   const params = await searchParams
 
-  // F-0016 US-1D-1 / US-1G-1: server-side filter (Backend `getBrigadnici` accepts
-  // `typFilter` + `stavFilter`; do NOT post-filter on client — chokepoint for pagination later).
+  // F-0016 US-1D-1 / US-1G-1: server-side filter
   const typFilter: "all" | "brigadnik" | "osvc" =
     params.typ === "brigadnik" || params.typ === "osvc" ? params.typ : "all"
   const stavFilter = (params.stav ?? "")
@@ -35,11 +44,18 @@ export default async function BrigadniciPage({
     .map((s) => s.trim())
     .filter(Boolean)
 
+  // F-0017 US-1B-1 — quick filter preset (silent fallback pro unknown value)
+  const filterParsed = AlertFilterKeySchema.safeParse(params.filter)
+  const filterKey = filterParsed.success ? filterParsed.data : undefined
+
   const brigadnici = await getBrigadnici({
     search: params.q,
     typFilter,
     stavFilter: stavFilter.length > 0 ? stavFilter : undefined,
+    filterKey,
   })
+
+  const filterLabel = filterKey ? FILTER_KEY_LABELS[filterKey] : null
 
   return (
     <div className="space-y-5">
@@ -54,6 +70,24 @@ export default async function BrigadniciPage({
       />
 
       <BrigadniciSearch />
+
+      {/* F-0017 — quick chips preset filters */}
+      <BrigadniciQuickFilters />
+
+      {/* F-0017 — active filter badge */}
+      {filterLabel && (
+        <div className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50/60 px-3 py-1.5 text-xs">
+          <span className="font-medium text-amber-800">
+            Filtr: {filterLabel} ({brigadnici.length})
+          </span>
+          <Link
+            href={`/app/brigadnici${buildUrlWithoutFilter(params)}`}
+            className="text-primary hover:underline"
+          >
+            Zrušit
+          </Link>
+        </div>
+      )}
 
       <BrigadniciListFilters />
 
@@ -130,4 +164,17 @@ export default async function BrigadniciPage({
       </Card>
     </div>
   )
+}
+
+function buildUrlWithoutFilter(params: {
+  q?: string
+  typ?: string
+  stav?: string
+}): string {
+  const sp = new URLSearchParams()
+  if (params.q) sp.set("q", params.q)
+  if (params.typ) sp.set("typ", params.typ)
+  if (params.stav) sp.set("stav", params.stav)
+  const qs = sp.toString()
+  return qs ? `?${qs}` : ""
 }
