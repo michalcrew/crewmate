@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { DOKUMENTACNI_STAVY, type DokumentacniStav } from "./dokumentacni-stav-badge"
 import { setDokumentacniStavManual } from "@/lib/actions/brigadnici"
@@ -41,6 +41,16 @@ export function DokumentacniStavSelect({ brigadnikId, current, ariaLabel, compac
   const [value, setValue] = useState<string>(current ?? "nevyplnene_udaje")
   const [pending, startTransition] = useTransition()
 
+  // Sync local state s `current` prop — po server revalidate se page re-renderuje s novými
+  // props, ale useState initial se nespustí znovu. Bez tohoto efektu zůstává dropdown
+  // na starém local state a další klik počítá s jinou baseline než DB (rollback misclick fail).
+  useEffect(() => {
+    if (current && current !== value && !pending) {
+      setValue(current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current])
+
   const config = DOKUMENTACNI_STAVY[value as DokumentacniStav]
   const styleClass = config?.className ?? "bg-muted text-muted-foreground border-muted"
 
@@ -52,14 +62,20 @@ export function DokumentacniStavSelect({ brigadnikId, current, ariaLabel, compac
       onChange={(e) => {
         const next = e.target.value as DokumentacniStav
         const prev = value
+        if (next === prev) return // žádná změna
         setValue(next) // optimistic
         startTransition(async () => {
-          const res = await setDokumentacniStavManual(brigadnikId, next)
-          if ("error" in res && res.error) {
-            setValue(prev)
-            toast.error(res.error)
-          } else {
+          try {
+            const res = await setDokumentacniStavManual(brigadnikId, next)
+            if (res && "error" in res && res.error) {
+              setValue(prev)
+              toast.error(`Nepodařilo se změnit stav: ${res.error}`)
+              return
+            }
             toast.success(`Stav změněn: ${DOKUMENTACNI_STAVY[next].label}`)
+          } catch (err) {
+            setValue(prev)
+            toast.error(`Chyba při změně stavu: ${err instanceof Error ? err.message : String(err)}`)
           }
         })
       }}
