@@ -16,27 +16,156 @@ const akceSchema = z.object({
   poznamky: z.string().optional(),
 })
 
+// F-0015 — Zod enums
+const stavEnum = z.enum(["planovana", "probehla", "zrusena"])
+const stavFilterEnum = z.enum(["planovana", "probehla", "zrusena", "all"])
+
+// F-0015 — Allowlist pro updateAkce na probehla (D-05)
+const probehlaAllowlist = z.object({
+  poznamky: z.string().optional(),
+  pocet_lidi: z.coerce.number().int().positive().optional(),
+})
+
+// F-0015 — plný update schema pro planovana
+const updateAkceFullSchema = z.object({
+  nazev: z.string().min(1, "Název je povinný").optional(),
+  datum: z.string().min(1, "Datum je povinné").optional(),
+  misto: z.string().optional(),
+  cas_od: z.string().optional(),
+  cas_do: z.string().optional(),
+  klient: z.string().optional(),
+  pocet_lidi: z.coerce.number().int().positive().optional(),
+  poznamky: z.string().optional(),
+})
+
 function generatePin(): string {
   return String(Math.floor(100000 + Math.random() * 900000))
 }
 
-export async function getAkce(filter?: { mesic?: string }) {
+// ================================================================
+// F-0015 — Lazy auto-transition planovana → probehla
+// In-memory rate limit 5 min (pattern z F-0012 autoUkoncitJednodenniBatch).
+// Volá se v getAkce() loader fire-and-forget.
+// ================================================================
+
+let lastAutoUkoncitAkceAt: number | null = null
+const AUTO_UKONCIT_AKCE_TTL_MS = 5 * 60 * 1000
+
+export async function autoUkoncitProbeleAkceBatch(): Promise<{ count: number; rateLimited?: boolean }> {
+  if (lastAutoUkoncitAkceAt && Date.now() - lastAutoUkoncitAkceAt < AUTO_UKONCIT_AKCE_TTL_MS) {
+    return { count: 0, rateLimited: true }
+  }
   const supabase = await createClient()
+  const { data, error } = await supabase.rpc("fn_auto_ukoncit_probele_akce")
+  if (error) {
+    // best-effort — žádný throw, loader musí pokračovat
+    return { count: 0 }
+  }
+  lastAutoUkoncitAkceAt = Date.now()
+  return { count: typeof data === "number" ? data : 0 }
+}
+
+// ================================================================
+// F-0015 — getAkce s filter/sort per-tab (ADR-1A, ADR-1B)
+// ================================================================
+
+export async function getAkce(filter?: {
+  stav?: "planovana" | "probehla" | "zrusena" | "all"
+  mesic?: string
+  limit?: number
+  offset?: number
+}) {
+  // Lazy auto-batch (fire-and-forget — neblokuje loader)
+  autoUkoncitProbeleAkceBatch().catch(() => {})
+
+  const supabase = await createClient()
+
+  // Enum validation — fallback na 'planovana' pro invalid input (URL manipulation safety)
+  const parsedStav = filter?.stav ? stavFilterEnum.safeParse(filter.stav) : null
+  const stav = parsedStav?.success ? parsedStav.data : "planovana"
+  const limit = Math.min(Math.max(filter?.limit ?? 500, 1), 1000)
+  const offset = Math.max(filter?.offset ?? 0, 0)
+
   let query = supabase
     .from("akce")
-    .select("*, nabidka:nabidky(id, nazev), prirazeni_count:prirazeni(count)")
-    .order("datum", { ascending: true })
+    .select("*, nabidka:nabidky(id, nazev), prirazeni_count:prirazeni(count)", { count: "exact" })
 
+  // Per-tab WHERE
+  if (stav !== "all") {
+    query = query.eq("stav", stav)
+  }
+
+  // Per-tab sort (ADR-1B)
+  // NULLS handling: v ASC nulls first (neznámý čas → nahoru), v DESC nulls last.
+  if (stav === "planovana" || stav === "all") {
+    query = query.order("datum", { ascending: true }).order("cas_od", { ascending: true, nullsFirst: true })
+  } else if (stav === "probehla") {
+    query = query.order("datum", { ascending: false }).order("cas_od", { ascending: false, nullsFirst: false })
+  } else {
+    // zrusena
+    query = query.order("datum", { ascending: false })
+  }
+
+  // Legacy mesic filter (zpětná kompatibilita, UI nepoužívá)
   if (filter?.mesic) {
     const start = `${filter.mesic}-01`
     const [y, m] = filter.mesic.split("-").map(Number)
-    const nextM = (m ?? 0) === 12 ? 1 : (m ?? 0) + 1; const nextY = (m ?? 0) === 12 ? (y ?? 0) + 1 : (y ?? 0); const end = `${nextY}-${String(nextM).padStart(2, "0")}-01`
+    const nextM = (m ?? 0) === 12 ? 1 : (m ?? 0) + 1
+    const nextY = (m ?? 0) === 12 ? (y ?? 0) + 1 : (y ?? 0)
+    const end = `${nextY}-${String(nextM).padStart(2, "0")}-01`
     query = query.gte("datum", start).lt("datum", end)
   }
 
-  const { data, error } = await query
+  query = query.range(offset, offset + limit - 1)
+
+  const { data, error, count } = await query
   if (error) throw error
-  return data
+  return { data: data ?? [], totalCount: count ?? 0 }
+}
+
+// ================================================================
+// F-0015 — getAkceCounts (1 GROUP BY dotaz, SSR tab badges)
+// ================================================================
+
+export async function getAkceCounts(): Promise<{
+  planovana: number
+  probehla: number
+  zrusena: number
+  all: number
+}> {
+  const supabase = await createClient()
+  // Supabase JS neumí GROUP BY bez RPC — použijeme 3 lightweight head-count dotazy.
+  // < 1000 rows × 3 = trivial overhead, lepší než non-indexed full scan s group by přes SQL view.
+  const [pla, pro, zru] = await Promise.all([
+    supabase.from("akce").select("id", { count: "exact", head: true }).eq("stav", "planovana"),
+    supabase.from("akce").select("id", { count: "exact", head: true }).eq("stav", "probehla"),
+    supabase.from("akce").select("id", { count: "exact", head: true }).eq("stav", "zrusena"),
+  ])
+  const planovana = pla.count ?? 0
+  const probehla = pro.count ?? 0
+  const zrusena = zru.count ?? 0
+  return { planovana, probehla, zrusena, all: planovana + probehla + zrusena }
+}
+
+// ================================================================
+// F-0015 — Matrix dokumentační status (ADR-1F)
+// ================================================================
+
+export async function getMatrixDokumentacniStatus(
+  nabidkaId: string
+): Promise<Record<string, string>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("v_brigadnik_zakazka_status")
+    .select("brigadnik_id, dokumentacni_stav")
+    .eq("nabidka_id", nabidkaId)
+
+  if (error) return {}
+  const map: Record<string, string> = {}
+  for (const row of (data ?? []) as Array<{ brigadnik_id: string; dokumentacni_stav: string }>) {
+    map[row.brigadnik_id] = row.dokumentacni_stav
+  }
+  return map
 }
 
 export async function getAkceByNabidka(nabidkaId: string) {
@@ -384,4 +513,224 @@ export async function odeslatBriefing(akceId: string, briefingText?: string) {
     return { success: true, warning: `Odesláno ${sent}/${recipients.length}. Chyby: ${errors.join("; ")}` }
   }
   return { success: true, sent }
+}
+
+// ================================================================
+// F-0015 — Zrušit akci (atomic via RPC fn_zrusit_akci)
+// ================================================================
+
+export async function zrusitAkci(
+  akceId: string,
+  duvod?: string
+): Promise<{ success: true; affected_prirazeni: number } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  // Internal user id pro audit
+  const { data: internalUser } = await supabase
+    .from("users").select("id").eq("auth_user_id", user.id).single()
+  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+
+  // Načti nabidka_id pro revalidatePath
+  const { data: akceBefore } = await supabase
+    .from("akce").select("nabidka_id").eq("id", akceId).single()
+
+  const { data, error } = await supabase.rpc("fn_zrusit_akci", {
+    p_akce_id: akceId,
+    p_duvod: duvod ?? null,
+    p_user_id: internalUser.id,
+  })
+
+  if (error) {
+    const msg = error.message || ""
+    if (msg.includes("HAS_COMPLETED_DOCHAZKA")) {
+      return { error: "Akce má zaznamenanou kompletní docházku, nelze zrušit. Místo toho použijte 'Označit jako proběhlou'." }
+    }
+    if (msg.includes("AKCE_NOT_FOUND")) {
+      return { error: "Akce nenalezena" }
+    }
+    return { error: error.message }
+  }
+
+  const result = (data ?? {}) as { success?: boolean; affected_prirazeni?: number }
+
+  revalidatePath("/app/akce")
+  revalidatePath(`/app/akce/${akceId}`)
+  if (akceBefore?.nabidka_id) revalidatePath(`/app/nabidky/${akceBefore.nabidka_id}`)
+  revalidatePath("/app/dashboard")
+
+  return { success: true, affected_prirazeni: result.affected_prirazeni ?? 0 }
+}
+
+// ================================================================
+// F-0015 — Inline stav change (ADR-1E)
+// Guardy:
+//  - * → zrusena: delegujeme na zrusitAkci (hard block kompletní docházka)
+//  - probehla → planovana (reopen): insert historie typ='akce_reopen' (D-09 guard)
+//  - planovana → probehla: warning pokud bez odchod (UI confirm)
+// ================================================================
+
+export async function updateAkceStav(
+  akceId: string,
+  noviStav: "planovana" | "probehla" | "zrusena",
+  duvod?: string
+): Promise<{ success: true; warning?: string } | { error: string }> {
+  const parsedStav = stavEnum.safeParse(noviStav)
+  if (!parsedStav.success) return { error: "Neplatný stav" }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const { data: internalUser } = await supabase
+    .from("users").select("id").eq("auth_user_id", user.id).single()
+  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+
+  const { data: current } = await supabase
+    .from("akce").select("id, nazev, stav, nabidka_id").eq("id", akceId).single()
+  if (!current) return { error: "Akce nenalezena" }
+
+  // Delegace na zrusitAkci pro bulk prirazeni logic + guard
+  if (parsedStav.data === "zrusena") {
+    return (await zrusitAkci(akceId, duvod)) as { success: true } | { error: string }
+  }
+
+  // No-op
+  if (current.stav === parsedStav.data) {
+    return { success: true }
+  }
+
+  // zrusena → * blokováno (out of scope reopen zrušené, D-08)
+  if (current.stav === "zrusena") {
+    return { error: "Zrušenou akci nelze obnovit" }
+  }
+
+  let warning: string | undefined
+
+  // planovana → probehla: zkontroluj, že existuje dochazka s odchod (INV pro warning)
+  if (current.stav === "planovana" && parsedStav.data === "probehla") {
+    const { count } = await supabase
+      .from("dochazka")
+      .select("id, prirazeni!inner(akce_id)", { count: "exact", head: true })
+      .eq("prirazeni.akce_id", akceId)
+      .not("odchod", "is", null)
+    if (!count || count === 0) {
+      warning = "Akce ještě neměla zaznamenanou docházku"
+    }
+  }
+
+  // UPDATE akce
+  const { error: updErr } = await supabase
+    .from("akce")
+    .update({ stav: parsedStav.data, updated_at: new Date().toISOString() })
+    .eq("id", akceId)
+  if (updErr) return { error: updErr.message }
+
+  // Audit historie
+  const isReopen = current.stav === "probehla" && parsedStav.data === "planovana"
+  const typ = isReopen ? "akce_reopen" : "akce_stav_zmena"
+  const popisBase = isReopen
+    ? `Akce "${current.nazev}" obnovena (reopen)`
+    : `Stav akce "${current.nazev}" změněn z ${current.stav} na ${parsedStav.data}`
+  const popis = duvod ? `${popisBase}. Důvod: ${duvod}` : popisBase
+
+  await supabase.from("historie").insert({
+    akce_id: akceId,
+    nabidka_id: current.nabidka_id,
+    user_id: internalUser.id,
+    typ,
+    popis,
+    metadata: { old_stav: current.stav, new_stav: parsedStav.data, duvod: duvod ?? null },
+  })
+
+  revalidatePath("/app/akce")
+  revalidatePath(`/app/akce/${akceId}`)
+  if (current.nabidka_id) revalidatePath(`/app/nabidky/${current.nabidka_id}`)
+  revalidatePath("/app/dashboard")
+
+  return warning ? { success: true, warning } : { success: true }
+}
+
+// ================================================================
+// F-0015 — updateAkce (D-05 allowlist pro proběhlé)
+// ================================================================
+
+export async function updateAkce(
+  akceId: string,
+  formData: FormData
+): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const { data: internalUser } = await supabase
+    .from("users").select("id").eq("auth_user_id", user.id).single()
+
+  const { data: current } = await supabase
+    .from("akce").select("id, nazev, stav, nabidka_id").eq("id", akceId).single()
+  if (!current) return { error: "Akce nenalezena" }
+
+  if (current.stav === "zrusena") {
+    return { error: "Zrušenou akci nelze upravovat" }
+  }
+
+  const raw = Object.fromEntries(formData.entries())
+
+  // D-05: proběhlé → jen allowlist poznamky + pocet_lidi
+  let updatePayload: Record<string, unknown>
+  if (current.stav === "probehla") {
+    const parsed = probehlaAllowlist.safeParse({
+      poznamky: raw.poznamky ?? undefined,
+      pocet_lidi: raw.pocet_lidi || undefined,
+    })
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
+    }
+    updatePayload = {
+      poznamky: parsed.data.poznamky ?? null,
+      pocet_lidi: parsed.data.pocet_lidi ?? null,
+      updated_at: new Date().toISOString(),
+    }
+  } else {
+    // planovana: plný update
+    const normalized = { ...raw, pocet_lidi: raw.pocet_lidi || undefined }
+    const parsed = updateAkceFullSchema.safeParse(normalized)
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
+    }
+    updatePayload = {
+      ...parsed.data,
+      cas_od: parsed.data.cas_od || null,
+      cas_do: parsed.data.cas_do || null,
+      klient: parsed.data.klient || null,
+      misto: parsed.data.misto || null,
+      pocet_lidi: parsed.data.pocet_lidi ?? null,
+      poznamky: parsed.data.poznamky ?? null,
+      updated_at: new Date().toISOString(),
+    }
+  }
+
+  const { error } = await supabase
+    .from("akce")
+    .update(updatePayload)
+    .eq("id", akceId)
+
+  if (error) return { error: error.message }
+
+  // Audit
+  await supabase.from("historie").insert({
+    akce_id: akceId,
+    nabidka_id: current.nabidka_id,
+    user_id: internalUser?.id,
+    typ: "akce_zmena",
+    popis: `Upravena akce "${current.nazev}"`,
+    metadata: { stav: current.stav, fields: Object.keys(updatePayload) },
+  })
+
+  revalidatePath("/app/akce")
+  revalidatePath(`/app/akce/${akceId}`)
+  if (current.nabidka_id) revalidatePath(`/app/nabidky/${current.nabidka_id}`)
+
+  return { success: true }
 }

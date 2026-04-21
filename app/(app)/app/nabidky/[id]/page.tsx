@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getNabidkaById } from "@/lib/actions/nabidky"
 import { getPipelineByNabidka } from "@/lib/actions/pipeline"
-import { getAkceByNabidka } from "@/lib/actions/akce"
+import { getAkceByNabidka, getMatrixDokumentacniStatus } from "@/lib/actions/akce"
 import { getBrigadnici } from "@/lib/actions/brigadnici"
 import { createClient } from "@/lib/supabase/server"
 import { TypBadge } from "@/components/nabidky/typ-badge"
@@ -105,7 +105,10 @@ export default async function NabidkaDetailPage({
     // graceful fallback
   }
 
-  const enrichedPipeline = await enrichPipeline(pipeline)
+  const [enrichedPipeline, dokumentacniMap] = await Promise.all([
+    enrichPipeline(pipeline),
+    getMatrixDokumentacniStatus(id),
+  ])
 
   const pipelineIds = new Set(
     (pipeline as Array<{ brigadnik: { id: string } | null }>).map(p => p.brigadnik?.id).filter(Boolean)
@@ -198,6 +201,7 @@ export default async function NabidkaDetailPage({
         pipeline={enrichedPipeline}
         akce={akce}
         readOnly={isUkoncena}
+        dokumentacniMap={dokumentacniMap}
       />
 
       {(nabidka.popis_prace || nabidka.pozadavky || nabidka.koho_hledame || nabidka.co_nabizime) && (
