@@ -126,7 +126,11 @@ export async function sendDocumentAction(input: unknown): Promise<SendEmailResul
     .upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: true })
 
   // Get current user for signature
-  const { data: currentUser } = await supabase
+  // HF: authenticated SELECT na users občas vrací prázdno (RLS edge case,
+  // stejný pattern jako F-0013 HF4c + F-0015 HF). Fallback přes adminClient
+  // je bezpečný — auth check už proběhl výše, filter přes auth_user_id =
+  // user.id garantuje self-only lookup.
+  const { data: currentUser } = await adminClient
     .from("users")
     .select("id, jmeno, prijmeni, podpis, pridat_logo")
     .eq("auth_user_id", user.id)
