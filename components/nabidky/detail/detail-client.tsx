@@ -26,7 +26,7 @@ import { Calendar, MapPin, Copy, Send, ClipboardList, Loader2, MoreHorizontal, B
 import { PIPELINE_STATES } from "@/lib/constants"
 import { updatePipelineStav } from "@/lib/actions/pipeline"
 import { assignBrigadnikToAkce, unassignBrigadnikFromAkce, odeslatBriefing } from "@/lib/actions/akce"
-import { DokumentacniStavBadge } from "@/components/brigadnici/dokumentacni-stav-badge"
+import { DokumentacniStavSelect } from "@/components/brigadnici/dokumentacni-stav-select"
 import { FakturantBadge } from "@/components/brigadnici/fakturant-badge"
 import { StarRating } from "@/components/ui/star-rating"
 import { PipelineEntryPoznamkaPopover } from "@/components/pipeline/pipeline-entry-poznamka-popover"
@@ -322,12 +322,15 @@ function BrigadnikCardInner({
           </div>
           <p className="text-xs text-muted-foreground">{b.telefon}</p>
         </div>
-        {/* F-0015 enh — dokumentační status badge v Pipeline kartě (stejný pattern jako matrix). */}
-        {dokumentacniStav && (
-          <div>
-            <DokumentacniStavBadge stav={dokumentacniStav} />
-          </div>
-        )}
+        {/* F-0015 enh + F-0016 post: dokumentační status editovatelný z pipeline karty. */}
+        <div onPointerDown={(ev) => ev.stopPropagation()} onClick={(ev) => ev.stopPropagation()}>
+          <DokumentacniStavSelect
+            brigadnikId={b.id}
+            current={dokumentacniStav}
+            ariaLabel={`${b.prijmeni} ${b.jmeno}`}
+            compact
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-1">
           {b.dotaznik_vyplnen ? (
             <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">
@@ -492,8 +495,13 @@ function AssignmentMatrix({
 
                         {/* Rows 3-6 — desktop vždy viditelné, mobile collapse přes details. */}
                         <div className="hidden sm:block space-y-1 mt-1">
-                          {/* Row 3: Dokumentační status */}
-                          {dokStav && <DokumentacniStavBadge stav={dokStav} />}
+                          {/* Row 3: Dokumentační status (editovatelný) */}
+                          <DokumentacniStavSelect
+                            brigadnikId={b.id}
+                            current={dokStav}
+                            ariaLabel={`${b.prijmeni} ${b.jmeno}`}
+                            compact
+                          />
                           {/* Row 4: Pipeline poznámka popover */}
                           <div className="flex items-center gap-1">
                             <PipelineEntryPoznamkaPopover
@@ -522,7 +530,12 @@ function AssignmentMatrix({
                             {e.poznamky && <span aria-label="Poznámka existuje">📝</span>}
                           </summary>
                           <div className="mt-1 space-y-1">
-                            {dokStav && <DokumentacniStavBadge stav={dokStav} />}
+                            <DokumentacniStavSelect
+                              brigadnikId={b.id}
+                              current={dokStav}
+                              ariaLabel={`${b.prijmeni} ${b.jmeno}`}
+                              compact
+                            />
                             <PipelineEntryPoznamkaPopover entryId={e.id} initialText={e.poznamky ?? null} />
                             <div className="text-[10px] text-muted-foreground">
                               {e.hodiny_rok != null && e.hodiny_rok > 0
