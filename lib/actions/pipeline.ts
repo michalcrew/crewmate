@@ -1,8 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import sanitizeHtml from "sanitize-html"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { updatePipelinePoznamkaSchema } from "@/lib/schemas/hodnoceni"
 
 export async function getPipelineByNabidka(nabidkaId: string) {
   const supabase = await createClient()
@@ -140,6 +142,56 @@ export async function maybeAutoTransitionPipeline(
   }
 
   return { transitioned: ids, nabidkaIds }
+}
+
+/**
+ * F-0016 US-1E-1: update poznámky na pipeline_entries (scratchpad per-zakázka).
+ *
+ * - Sanitizace: strip VŠECHNY HTML tagy (allowedTags: [], allowedAttributes: {}).
+ * - Max 500 znaků (Zod) — orientační, ne DB-enforced.
+ * - Prázdný text → NULL (žádný empty string v DB).
+ * - Žádný audit do historie (D-F0016, scratchpad — mění se často, nezajímá nás).
+ */
+export async function updatePipelineEntryPoznamka(
+  entryId: string,
+  text: string
+): Promise<{ success: true } | { error: string }> {
+  const parsed = updatePipelinePoznamkaSchema.safeParse({ entry_id: entryId, text })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  // Strip all HTML — scratchpad je plain-text only (React escape už řeší render,
+  // ale defense-in-depth na save).
+  const cleaned = sanitizeHtml(parsed.data.text, {
+    allowedTags: [],
+    allowedAttributes: {},
+  }).trim()
+  const finalText = cleaned.length === 0 ? null : cleaned
+
+  const { data: entry } = await supabase
+    .from("pipeline_entries")
+    .select("id, nabidka_id")
+    .eq("id", parsed.data.entry_id)
+    .single()
+
+  if (!entry) return { error: "Pipeline entry nenalezen" }
+
+  const { error } = await supabase
+    .from("pipeline_entries")
+    .update({ poznamky: finalText })
+    .eq("id", parsed.data.entry_id)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/app/nabidky/${entry.nabidka_id}`)
+  return { success: true }
 }
 
 export async function addBrigadnikToPipeline(

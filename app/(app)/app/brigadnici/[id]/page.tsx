@@ -26,16 +26,40 @@ import {
   getBrigadnikHistorie,
   getBrigadnikZkusenosti,
 } from "@/lib/actions/brigadnici"
+import { getHodnoceniByBrigadnik } from "@/lib/actions/hodnoceni"
 import { PIPELINE_STATES, DPP_STATES } from "@/lib/constants"
 import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button"
 import { GenerateDppButton, GenerateProhlaseniButton, SendDppButton, UploadPodpisForm } from "@/components/brigadnici/dpp-actions"
-import { EditBrigadnikDialog } from "@/components/brigadnici/edit-brigadnik-dialog"
+import { UpravitBrigadnikaDialog } from "@/components/brigadnici/upravit-brigadnika-dialog"
+import { BrigadnikAkceSekce } from "@/components/brigadnici/brigadnik-akce-sekce"
+import { HodnoceniList, type HodnoceniItem } from "@/components/brigadnici/hodnoceni-list"
+import { PridatHodnoceniDialog } from "@/components/brigadnici/pridat-hodnoceni-dialog"
+import { FakturantBadge } from "@/components/brigadnici/fakturant-badge"
+import { StarRating } from "@/components/ui/star-rating"
 import { BrigadnikEmailTab } from "@/components/email/brigadnik-email-tab"
 import { getThreads, getKomunikaceTimeline } from "@/lib/actions/email"
+import { createClient } from "@/lib/supabase/server"
 import { validateDPPFields, validateProhlaseniFields } from "@/lib/documents/dpp-data-validator"
 
 export const metadata: Metadata = {
   title: "Detail brigádníka",
+}
+
+/**
+ * F-0016 US-1C-1: akce combobox source — posledních 50 akcí
+ * z posledních 6 měsíců (per Architect open item #3).
+ */
+async function loadAkceOptions(): Promise<{ id: string; nazev: string; datum: string }[]> {
+  const supabase = await createClient()
+  const sixMonthsAgo = new Date()
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+  const { data } = await supabase
+    .from("akce")
+    .select("id, nazev, datum")
+    .gte("datum", sixMonthsAgo.toISOString().slice(0, 10))
+    .order("datum", { ascending: false })
+    .limit(50)
+  return (data ?? []) as { id: string; nazev: string; datum: string }[]
 }
 
 export default async function BrigadnikDetailPage({
@@ -47,14 +71,22 @@ export default async function BrigadnikDetailPage({
   const brigadnik = await getBrigadnikById(id)
   if (!brigadnik) notFound()
 
-  const [pipeline, smluvniStav, historie, zkusenosti, emailData, komunikaceTimeline] = await Promise.all([
+  const [pipeline, smluvniStav, historie, zkusenosti, emailData, komunikaceTimeline, hodnoceniData, akceOptions] = await Promise.all([
     getBrigadnikPipeline(id),
     getBrigadnikSmluvniStav(id),
     getBrigadnikHistorie(id),
     getBrigadnikZkusenosti(id),
     getThreads({ status_filter: undefined, page: 1, limit: 50 }),
     getKomunikaceTimeline(id, { limit: 100 }),
+    getHodnoceniByBrigadnik(id),
+    loadAkceOptions(),
   ])
+
+  const hodnoceniItems = hodnoceniData as unknown as HodnoceniItem[]
+  const hodnoceniPrumer =
+    hodnoceniItems.length === 0
+      ? 0
+      : hodnoceniItems.reduce((acc, h) => acc + h.hodnoceni, 0) / hodnoceniItems.length
 
   // Filter threads for this brigadník
   const brigadnikThreads = emailData.threads.filter(t => t.brigadnik_id === id)
@@ -79,15 +111,7 @@ export default async function BrigadnikDetailPage({
             <h1 className="text-2xl font-semibold">
               {brigadnik.jmeno} {brigadnik.prijmeni}
             </h1>
-            {brigadnik.typ_brigadnika === "osvc" && (
-              <Badge
-                variant="outline"
-                className="bg-purple-500/10 text-purple-600 border-purple-500/20 text-xs"
-                aria-label="OSVČ fakturant"
-              >
-                Fakturant (OSVČ)
-              </Badge>
-            )}
+            <FakturantBadge typ={brigadnik.typ_brigadnika} variant="header" />
           </div>
           <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
             <span>{brigadnik.email}</span>
@@ -102,7 +126,13 @@ export default async function BrigadnikDetailPage({
           </div>
         </div>
         <div className="ml-auto flex gap-2">
-          <EditBrigadnikDialog brigadnik={brigadnik} />
+          <UpravitBrigadnikaDialog
+            brigadnik={{
+              ...brigadnik,
+              rodne_cislo_vyplneno: Boolean(brigadnik.rodne_cislo),
+              cislo_op_vyplneno: Boolean(brigadnik.cislo_op),
+            }}
+          />
           {!brigadnik.dotaznik_vyplnen && (
             <SendDotaznikButton brigadnikId={brigadnik.id} brigadnikEmail={brigadnik.email} />
           )}
@@ -112,7 +142,9 @@ export default async function BrigadnikDetailPage({
       <Tabs defaultValue="prehled">
         <TabsList>
           <TabsTrigger value="prehled">Přehled</TabsTrigger>
+          <TabsTrigger value="akce">Akce</TabsTrigger>
           <TabsTrigger value="udaje">Osobní údaje</TabsTrigger>
+          <TabsTrigger value="hodnoceni">Hodnocení ({hodnoceniItems.length})</TabsTrigger>
           <TabsTrigger value="zkusenosti">Zkušenosti ({zkusenosti.length})</TabsTrigger>
           <TabsTrigger value="smluvni">Smluvní stav</TabsTrigger>
           <TabsTrigger value="historie">Historie</TabsTrigger>
@@ -167,6 +199,29 @@ export default async function BrigadnikDetailPage({
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="akce" className="mt-4">
+          <BrigadnikAkceSekce brigadnikId={brigadnik.id} />
+        </TabsContent>
+
+        <TabsContent value="hodnoceni" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <CardTitle className="flex items-center gap-3">
+                  Hodnocení ({hodnoceniItems.length})
+                  {hodnoceniItems.length > 0 && (
+                    <StarRating value={hodnoceniPrumer} count={hodnoceniItems.length} />
+                  )}
+                </CardTitle>
+                <PridatHodnoceniDialog brigadnikId={brigadnik.id} akceOptions={akceOptions} />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <HodnoceniList items={hodnoceniItems} akceOptions={akceOptions} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="udaje" className="mt-4">

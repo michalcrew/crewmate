@@ -27,6 +27,9 @@ import { PIPELINE_STATES } from "@/lib/constants"
 import { updatePipelineStav } from "@/lib/actions/pipeline"
 import { assignBrigadnikToAkce, unassignBrigadnikFromAkce, odeslatBriefing } from "@/lib/actions/akce"
 import { DokumentacniStavBadge } from "@/components/brigadnici/dokumentacni-stav-badge"
+import { FakturantBadge } from "@/components/brigadnici/fakturant-badge"
+import { StarRating } from "@/components/ui/star-rating"
+import { PipelineEntryPoznamkaPopover } from "@/components/pipeline/pipeline-entry-poznamka-popover"
 import { AkceStavSelector } from "@/components/akce/akce-stav-selector"
 import { ZrusitAkciDialog } from "@/components/akce/zrusit-akci-dialog"
 
@@ -42,12 +45,16 @@ export type PipelineEntry = {
     email: string
     telefon: string
     dotaznik_vyplnen: boolean
+    typ_brigadnika?: "brigadnik" | "osvc" | null
   } | null
   naborar: { jmeno: string; prijmeni: string } | null
   dpp_stav?: string | null
   prohlaseni_stav?: string | null
   hodiny_ytd?: number
+  hodiny_rok?: number | null
   avg_hodnoceni?: number | null
+  pocet_hodnoceni?: number | null
+  poznamky?: string | null
 }
 
 export type AkceWithPrirazeni = {
@@ -302,14 +309,17 @@ function BrigadnikCardInner({
           {/* Link nesmí volat stopPropagation na pointer eventech — blokovalo by drag listener na parent divu.
               Místo toho necháváme drag activationConstraint (distance: 8px) rozhodovat: krátký klik = navigace,
               drag 8+ px = přesun kanbanu. */}
-          <Link
-            href={`/app/brigadnici/${b.id}`}
-            className="font-medium text-sm hover:underline"
-            onClick={(e) => { if (isDragging) e.preventDefault() }}
-            draggable={false}
-          >
-            {b.prijmeni} {b.jmeno}
-          </Link>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <FakturantBadge typ={b.typ_brigadnika} variant="prefix" />
+            <Link
+              href={`/app/brigadnici/${b.id}`}
+              className="font-medium text-sm hover:underline"
+              onClick={(e) => { if (isDragging) e.preventDefault() }}
+              draggable={false}
+            >
+              {b.prijmeni} {b.jmeno}
+            </Link>
+          </div>
           <p className="text-xs text-muted-foreground">{b.telefon}</p>
         </div>
         {/* F-0015 enh — dokumentační status badge v Pipeline kartě (stejný pattern jako matrix). */}
@@ -469,41 +479,59 @@ function AssignmentMatrix({
                   return (
                     <tr key={e.id} className="border-b last:border-b-0 hover:bg-muted/30">
                       <td className="sticky left-0 bg-card group-hover:bg-muted/30 px-3 py-2 border-r">
-                        {/* Row 1: jméno + telefon */}
-                        <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
-                          {b.prijmeni} {b.jmeno}
-                        </Link>
+                        {/* Row 1: Fakturant badge prefix + jméno */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <FakturantBadge typ={b.typ_brigadnika} variant="prefix" />
+                          <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
+                            {b.prijmeni} {b.jmeno}
+                          </Link>
+                        </div>
+
+                        {/* Row 2: Telefon (vždy) */}
                         <p className="text-[11px] text-muted-foreground leading-tight">{b.telefon}</p>
 
-                        {/* Row 3: Dokumentační status badge (F-0013) — F-0015 US-1F.
-                            Mobile < 640px: skryt v details/summary. */}
-                        {dokStav && (
-                          <>
-                            <div className="mt-1 hidden sm:block">
-                              <DokumentacniStavBadge stav={dokStav} />
-                            </div>
-                            <details className="mt-1 sm:hidden">
-                              <summary className="text-[10px] text-muted-foreground cursor-pointer select-none">
-                                Dokumentace
-                              </summary>
-                              <div className="mt-1">
-                                <DokumentacniStavBadge stav={dokStav} />
-                              </div>
-                            </details>
-                          </>
-                        )}
-
-                        {/* Row 4: DPP + Prohlášení + Hodnocení + YTD */}
-                        <div className="flex flex-wrap items-center gap-1 mt-1">
-                          {dppOk && <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[9px] h-4">DPP</Badge>}
-                          {prohlaseniOk && <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[9px] h-4">Prohl.</Badge>}
-                          {e.avg_hodnoceni != null && e.avg_hodnoceni > 0 && (
-                            <span className="text-[10px] text-amber-500">⭐ {e.avg_hodnoceni.toFixed(1)}</span>
-                          )}
-                          {e.hodiny_ytd != null && e.hodiny_ytd > 0 && (
-                            <span className="text-[10px] text-muted-foreground">{e.hodiny_ytd.toFixed(0)}h</span>
-                          )}
+                        {/* Rows 3-6 — desktop vždy viditelné, mobile collapse přes details. */}
+                        <div className="hidden sm:block space-y-1 mt-1">
+                          {/* Row 3: Dokumentační status */}
+                          {dokStav && <DokumentacniStavBadge stav={dokStav} />}
+                          {/* Row 4: Pipeline poznámka popover */}
+                          <div className="flex items-center gap-1">
+                            <PipelineEntryPoznamkaPopover
+                              entryId={e.id}
+                              initialText={e.poznamky ?? null}
+                            />
+                            {dppOk && <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[9px] h-4">DPP</Badge>}
+                            {prohlaseniOk && <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[9px] h-4">Prohl.</Badge>}
+                          </div>
+                          {/* Row 5: Hodiny/rok */}
+                          <div className="text-[10px] text-muted-foreground">
+                            {e.hodiny_rok != null && e.hodiny_rok > 0
+                              ? `${e.hodiny_rok.toFixed(0)} h / ${new Date().getFullYear()}`
+                              : e.hodiny_ytd != null && e.hodiny_ytd > 0
+                                ? `${e.hodiny_ytd.toFixed(0)} h`
+                                : `0 h / ${new Date().getFullYear()}`}
+                          </div>
+                          {/* Row 6: Hodnocení */}
+                          <StarRating value={e.avg_hodnoceni ?? 0} count={e.pocet_hodnoceni ?? undefined} />
                         </div>
+
+                        {/* Mobile collapse: jen status indikátor poznámky + expand. */}
+                        <details className="mt-1 sm:hidden">
+                          <summary className="text-[10px] text-muted-foreground cursor-pointer select-none flex items-center gap-1">
+                            <span>Více</span>
+                            {e.poznamky && <span aria-label="Poznámka existuje">📝</span>}
+                          </summary>
+                          <div className="mt-1 space-y-1">
+                            {dokStav && <DokumentacniStavBadge stav={dokStav} />}
+                            <PipelineEntryPoznamkaPopover entryId={e.id} initialText={e.poznamky ?? null} />
+                            <div className="text-[10px] text-muted-foreground">
+                              {e.hodiny_rok != null && e.hodiny_rok > 0
+                                ? `${e.hodiny_rok.toFixed(0)} h / ${new Date().getFullYear()}`
+                                : `0 h / ${new Date().getFullYear()}`}
+                            </div>
+                            <StarRating value={e.avg_hodnoceni ?? 0} count={e.pocet_hodnoceni ?? undefined} />
+                          </div>
+                        </details>
                       </td>
                       {akce.map(a => {
                         const key = `${b.id}:${a.id}`
