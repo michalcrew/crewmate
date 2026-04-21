@@ -11,6 +11,7 @@ import { NabidkyFilter } from "@/components/nabidky/nabidky-filter"
 import { TypBadge } from "@/components/nabidky/typ-badge"
 import { PublishToggle } from "@/components/nabidky/publish-toggle"
 import { UkoncitButton } from "@/components/nabidky/detail/ukoncit-button"
+import { ZobrazitNabidkuButton } from "@/components/nabidky/zobrazit-nabidku-button"
 import { PageHeader } from "@/components/shared/page-header"
 import { EmptyState } from "@/components/shared/empty-state"
 
@@ -66,6 +67,7 @@ export default async function NabidkyPage({
                     <TableHead className="text-center">Pipeline</TableHead>
                     <TableHead className="text-center">Publikovat</TableHead>
                     <TableHead className="text-center w-12"></TableHead>
+                    <TableHead className="text-center w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -104,6 +106,13 @@ export default async function NabidkyPage({
                           <div className="flex items-center justify-center">
                             <PublishToggle id={n.id} publikovano={n.publikovano} typ={n.typ} />
                           </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <ZobrazitNabidkuButton
+                            slug={n.slug}
+                            publikovano={n.publikovano}
+                            variant="icon"
+                          />
                         </TableCell>
                         <TableCell className="text-center">
                           {n.typ !== "ukoncena" && (

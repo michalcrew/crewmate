@@ -15,6 +15,7 @@ import { EditNabidkaDialog } from "@/components/nabidky/edit-nabidka-dialog"
 import { AddToPipelineDialog } from "@/components/pipeline/add-to-pipeline-dialog"
 import { AddAkceDialog } from "@/components/nabidky/detail/add-akce-dialog"
 import { UkoncitButton } from "@/components/nabidky/detail/ukoncit-button"
+import { ZobrazitNabidkuButton } from "@/components/nabidky/zobrazit-nabidku-button"
 import {
   NabidkaDetailClient,
   type PipelineEntry as ClientPipelineEntry,
@@ -172,6 +173,11 @@ export default async function NabidkaDetailPage({
                   }
                 : null
             }
+          />
+          <ZobrazitNabidkuButton
+            slug={nabidka.slug}
+            publikovano={nabidka.publikovano}
+            variant="inline"
           />
           {!isUkoncena && <UkoncitButton id={nabidka.id} nazev={nabidka.nazev} />}
         </div>
