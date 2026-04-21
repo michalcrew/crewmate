@@ -481,43 +481,48 @@ export async function setDokumentacniStavManual(
 
   // Target 1: OSVČ — jen flip typ_brigadnika, smluvni_stav ponecháme (VIEW dá osvc prioritu 1)
   if (stav === "osvc") {
-    const { error } = await admin
+    const { error: typErr } = await admin
       .from("brigadnici")
       .update({ typ_brigadnika: "osvc" })
       .eq("id", brigadnikId)
-    if (error) return { error: error.message }
+    if (typErr) return { error: `typ_brigadnika: ${typErr.message}` }
   } else {
     // Ostatní stavy: osvc→brigadnik flip pokud je teď osvc
-    const { data: current } = await admin
+    const { data: current, error: readErr } = await admin
       .from("brigadnici")
       .select("typ_brigadnika, dotaznik_vyplnen")
       .eq("id", brigadnikId)
       .single()
+    if (readErr) return { error: `read brigadnika: ${readErr.message}` }
     if (!current) return { error: "Brigádník nenalezen" }
 
     if (current.typ_brigadnika === "osvc") {
-      await admin.from("brigadnici").update({ typ_brigadnika: "brigadnik" }).eq("id", brigadnikId)
+      const { error: unosvc } = await admin.from("brigadnici").update({ typ_brigadnika: "brigadnik" }).eq("id", brigadnikId)
+      if (unosvc) return { error: `flip osvc→brigadnik: ${unosvc.message}` }
     }
 
     // Upravit dotaznik_vyplnen podle cílového stavu
     if (stav === "nevyplnene_udaje") {
       if (current.dotaznik_vyplnen !== false) {
-        await admin.from("brigadnici").update({ dotaznik_vyplnen: false }).eq("id", brigadnikId)
+        const { error: dErr } = await admin.from("brigadnici").update({ dotaznik_vyplnen: false }).eq("id", brigadnikId)
+        if (dErr) return { error: `dotaznik→false: ${dErr.message}` }
       }
     } else {
       // vyplnene_udaje, poslana_dpp, podepsana_dpp, ukoncena_dpp → vyžaduje dotaznik_vyplnen=true
       if (current.dotaznik_vyplnen !== true) {
-        await admin.from("brigadnici").update({ dotaznik_vyplnen: true }).eq("id", brigadnikId)
+        const { error: dErr } = await admin.from("brigadnici").update({ dotaznik_vyplnen: true }).eq("id", brigadnikId)
+        if (dErr) return { error: `dotaznik→true: ${dErr.message}` }
       }
     }
 
     // Smluvni_stav úprava
-    const { data: existingSs } = await admin
+    const { data: existingSs, error: ssReadErr } = await admin
       .from("smluvni_stav")
       .select("id")
       .eq("brigadnik_id", brigadnikId)
       .eq("rok", rok)
       .maybeSingle()
+    if (ssReadErr) return { error: `read smluvni_stav: ${ssReadErr.message}` }
 
     const now = new Date().toISOString()
     const dppUpdate: Record<string, unknown> = {}
@@ -542,16 +547,16 @@ export async function setDokumentacniStavManual(
     }
 
     if (existingSs) {
-      const { error } = await admin
+      const { error: upErr } = await admin
         .from("smluvni_stav")
         .update(dppUpdate)
         .eq("id", existingSs.id)
-      if (error) return { error: error.message }
+      if (upErr) return { error: `update smluvni_stav: ${upErr.message}` }
     } else {
-      const { error } = await admin
+      const { error: insErr } = await admin
         .from("smluvni_stav")
         .insert({ brigadnik_id: brigadnikId, rok, ...dppUpdate })
-      if (error) return { error: error.message }
+      if (insErr) return { error: `insert smluvni_stav: ${insErr.message}` }
     }
   }
 
