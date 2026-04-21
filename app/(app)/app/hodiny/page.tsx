@@ -1,21 +1,30 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { redirect } from "next/navigation"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Clock, ArrowRight } from "lucide-react"
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table"
-import { getMyHodiny, getHodinySouhrn, getAllHodiny, getRecruitmentMetrics } from "@/lib/actions/naborar-hodiny"
+  getMyHodiny,
+  getAllHodiny,
+  getActiveNabidkyForPicker,
+  type HodinyRowWithMeta,
+} from "@/lib/actions/naborar-hodiny"
 import { getCurrentUserRole } from "@/lib/actions/users"
-import { ZapsatHodinyDialog } from "@/components/hodiny/zapsat-hodiny-dialog"
+import { formatMinutes } from "@/lib/utils/minutes"
 import { PageHeader } from "@/components/shared/page-header"
+import { PridatHodinyDialog } from "@/components/hodiny/pridat-hodiny-dialog"
+import { HodinyDenniKarta } from "@/components/hodiny/hodiny-denni-karta"
 
-export const metadata: Metadata = { title: "Moje hodiny" }
+export const metadata: Metadata = { title: "Hodiny-nábor" }
+
+type ViewMode = "moje" | "team"
 
 export default async function HodinyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mesic?: string }>
+  searchParams: Promise<{ mesic?: string; view?: string }>
 }) {
   const params = await searchParams
   const now = new Date()
@@ -25,172 +34,115 @@ export default async function HodinyPage({
   const role = await getCurrentUserRole()
   const isAdmin = role === "admin"
 
-  const myHodiny = await getMyHodiny(mesic)
-  const myTotal = myHodiny.reduce((sum, h) => sum + Number(h.hodin), 0)
+  // Default view: admin → team, náborářka → moje. Non-admin request team → redirect.
+  const rawView = params.view
+  if (!isAdmin && rawView === "team") {
+    redirect(`/app/hodiny?view=moje&mesic=${mesic}`)
+  }
+  const view: ViewMode = rawView === "moje" || rawView === "team"
+    ? rawView
+    : isAdmin ? "team" : "moje"
 
-  // Admin data
-  const souhrn = isAdmin ? await getHodinySouhrn(mesic) : []
-  const allHodiny = isAdmin ? await getAllHodiny(mesic) : []
-  const metrics = isAdmin ? await getRecruitmentMetrics(mesic) : null
+  const aktivniNabidky = await getActiveNabidkyForPicker()
+
+  const hodinyRaw: HodinyRowWithMeta[] = view === "team"
+    ? await getAllHodiny({ mesic })
+    : await getMyHodiny({ mesic })
+
+  // Group by datum DESC
+  const byDatum = new Map<string, HodinyRowWithMeta[]>()
+  for (const h of hodinyRaw) {
+    const arr = byDatum.get(h.datum) ?? []
+    arr.push(h)
+    byDatum.set(h.datum, arr)
+  }
+  const dniSorted = [...byDatum.keys()].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+
+  const totalMinut = hodinyRaw.reduce((s, h) => s + Number(h.trvani_minut || 0), 0)
+
+  const title = view === "team" ? "Hodiny-nábor — tým" : isAdmin ? "Moje hodiny-nábor" : "Moje hodiny"
+  const description = `${mesicLabel} — celkem ${formatMinutes(totalMinut)}`
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Moje hodiny"
-        description={mesicLabel}
-        actions={<ZapsatHodinyDialog />}
+        title={title}
+        description={description}
+        actions={
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Link href="/app/hodiny/prehled">
+                <Button variant="outline" size="sm">
+                  Přehled zakázek
+                  <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+                </Button>
+              </Link>
+            )}
+            <PridatHodinyDialog aktivniNabidky={aktivniNabidky} />
+          </div>
+        }
       />
 
+      {/* Admin view toggle (Moje / Tým) */}
+      {isAdmin && (
+        <div className="flex gap-2">
+          <Link href={`/app/hodiny?view=team&mesic=${mesic}`}>
+            <Badge variant={view === "team" ? "default" : "outline"} className="cursor-pointer h-8 px-3">
+              Tým
+            </Badge>
+          </Link>
+          <Link href={`/app/hodiny?view=moje&mesic=${mesic}`}>
+            <Badge variant={view === "moje" ? "default" : "outline"} className="cursor-pointer h-8 px-3">
+              Moje
+            </Badge>
+          </Link>
+        </div>
+      )}
+
       {/* Month selector */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {[-2, -1, 0, 1].map((offset) => {
           const d = new Date(now.getFullYear(), now.getMonth() + offset, 1)
           const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
           const label = d.toLocaleDateString("cs-CZ", { month: "short", year: "numeric" })
+          const href = `/app/hodiny?mesic=${val}${isAdmin ? `&view=${view}` : ""}`
           return (
-            <Link key={val} href={`/app/hodiny?mesic=${val}`}>
-              <Badge variant={val === mesic ? "default" : "outline"} className="cursor-pointer">{label}</Badge>
+            <Link key={val} href={href}>
+              <Badge variant={val === mesic ? "default" : "outline"} className="cursor-pointer h-8 px-3">
+                {label}
+              </Badge>
             </Link>
           )
         })}
       </div>
 
-      {/* Recruitment metrics */}
-      {isAdmin && metrics && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Hodin celkem</p>
-              <p className="text-2xl font-bold">{metrics.totalHours.toFixed(1)}h</p>
-              <p className="text-xs text-muted-foreground">{metrics.totalCost.toLocaleString("cs-CZ")} Kč</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Nabráno lidí</p>
-              <p className="text-2xl font-bold">{metrics.hiredCount}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Náklad / nabraný</p>
-              <p className="text-2xl font-bold">
-                {metrics.costPerHired ? `${metrics.costPerHired.toLocaleString("cs-CZ")} Kč` : "—"}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Náklad / akce</p>
-              <p className="text-2xl font-bold">
-                {metrics.costPerEvent ? `${metrics.costPerEvent.toLocaleString("cs-CZ")} Kč` : "—"}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Admin overview */}
-      {isAdmin && souhrn.length > 0 && (
+      {/* Day cards */}
+      {dniSorted.length === 0 ? (
         <Card>
-          <CardHeader>
-            <CardTitle>Souhrn týmu — {mesicLabel}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Náborářka</TableHead>
-                    <TableHead>Dní</TableHead>
-                    <TableHead>Hodin celkem</TableHead>
-                    <TableHead>Ø hodin/den</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {souhrn.map((s) => (
-                    <TableRow key={s.jmeno + s.prijmeni}>
-                      <TableCell className="font-medium">{s.jmeno} {s.prijmeni}</TableCell>
-                      <TableCell>{s.dnu}</TableCell>
-                      <TableCell className="font-semibold">{s.celkem.toFixed(1)}h</TableCell>
-                      <TableCell>{(s.celkem / s.dnu).toFixed(1)}h</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+          <CardContent className="py-12 flex flex-col items-center text-center gap-2">
+            <Clock className="h-10 w-10 text-muted-foreground/50" />
+            <p className="text-muted-foreground">Žádné záznamy za {mesicLabel}</p>
+            <p className="text-xs text-muted-foreground/70">Zapiš první hodiny kliknutím na „Zapsat hodiny" nahoře</p>
           </CardContent>
         </Card>
+      ) : (
+        <div className="space-y-3">
+          {dniSorted.map((datum) => {
+            const entries = byDatum.get(datum)!
+            const isToday = datum === new Date().toISOString().slice(0, 10)
+            return (
+              <HodinyDenniKarta
+                key={datum}
+                datum={datum}
+                entries={entries}
+                aktivniNabidky={aktivniNabidky}
+                showNaborar={view === "team"}
+                defaultExpanded={isToday}
+              />
+            )
+          })}
+        </div>
       )}
-
-      {/* My hours */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {isAdmin ? "Všechny záznamy" : "Moje hodiny"} — {mesicLabel}
-            <span className="text-sm font-normal text-muted-foreground ml-2">
-              ({isAdmin ? allHodiny.reduce((s, h) => s + Number(h.hodin), 0).toFixed(1) : myTotal.toFixed(1)}h celkem)
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {isAdmin && <TableHead>Náborářka</TableHead>}
-                  <TableHead>Datum</TableHead>
-                  <TableHead>Hodin</TableHead>
-                  <TableHead>Místo</TableHead>
-                  <TableHead>Náplň práce</TableHead>
-                  <TableHead>Stav</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(isAdmin ? allHodiny : myHodiny).length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={isAdmin ? 6 : 5} className="text-center text-muted-foreground py-8">
-                      Žádné záznamy za tento měsíc.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  (isAdmin ? allHodiny : myHodiny).map((h) => (
-                    <TableRow key={h.id}>
-                      {isAdmin && (
-                        <TableCell className="font-medium">
-                          {(h.naborar as unknown as { jmeno: string; prijmeni: string } | null)?.jmeno}{" "}
-                          {(h.naborar as unknown as { jmeno: string; prijmeni: string } | null)?.prijmeni}
-                        </TableCell>
-                      )}
-                      <TableCell>{new Date(h.datum).toLocaleDateString("cs-CZ")}</TableCell>
-                      <TableCell className="font-semibold">{Number(h.hodin).toFixed(1)}h</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {(h as unknown as { misto_prace?: string }).misto_prace === "kancelar" ? "Kancelář" :
-                           (h as unknown as { misto_prace?: string }).misto_prace === "remote" ? "Remote" :
-                           (h as unknown as { misto_prace?: string }).misto_prace === "akce" ? "Na akci" : "—"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate">{h.napln_prace}</TableCell>
-                      <TableCell>
-                        {h.je_zpetny_zapis ? (
-                          <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 text-xs" title={h.duvod_zpozdeni ?? ""}>
-                            Zpětný zápis
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-xs">
-                            Včas
-                          </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }
