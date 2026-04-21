@@ -1,13 +1,16 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import Link from "next/link"
-import { EmailComposer } from "./email-composer"
+import { EmailComposeSheet } from "./email-compose-sheet"
 import { ConversationStatusBadge } from "./conversation-status-badge"
 import { DocumentSendModal } from "./document-send-modal"
+import { SendDotaznikDialog } from "@/components/brigadnici/send-dotaznik-dialog"
+import { KomunikaceTimeline } from "@/components/brigadnici/komunikace-timeline"
 import type { EmailThread } from "@/types/email"
+import type { KomunikaceTimelineItem } from "@/lib/actions/email"
 import { Button } from "@/components/ui/button"
-import { Mail, FileText } from "lucide-react"
+import { Mail } from "lucide-react"
 
 export function BrigadnikEmailTab({
   brigadnikId,
@@ -16,6 +19,7 @@ export function BrigadnikEmailTab({
   missingDppFields,
   missingProhlaseniFields,
   threads,
+  timeline = [],
 }: {
   brigadnikId: string
   brigadnikEmail: string
@@ -23,17 +27,29 @@ export function BrigadnikEmailTab({
   missingDppFields: string[]
   missingProhlaseniFields: string[]
   threads: EmailThread[]
+  /** F-0014 1D — sjednocená historie komunikačních událostí */
+  timeline?: KomunikaceTimelineItem[]
 }) {
-  const [showComposer, setShowComposer] = useState(false)
+  const [view, setView] = useState<"timeline" | "konverzace">("timeline")
 
   return (
     <div className="space-y-4">
-      {/* Action buttons */}
+      {/* F-0014 1C — akční tlačítka v pořadí: Nový email | Dotazník | DPP | Prohlášení */}
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onClick={() => setShowComposer(!showComposer)}>
-          <Mail className="h-4 w-4 mr-2" />
-          Nový email
-        </Button>
+        <EmailComposeSheet
+          brigadnikId={brigadnikId}
+          brigadnikEmail={brigadnikEmail}
+          trigger={
+            <Button variant="outline" size="sm" aria-label="Nový email">
+              <Mail className="h-4 w-4 mr-2" aria-hidden="true" />
+              Nový email
+            </Button>
+          }
+        />
+        <SendDotaznikDialog
+          brigadnikId={brigadnikId}
+          brigadnikEmail={brigadnikEmail}
+        />
         <DocumentSendModal
           brigadnikId={brigadnikId}
           brigadnikName={brigadnikName}
@@ -48,24 +64,43 @@ export function BrigadnikEmailTab({
         />
       </div>
 
-      {/* Composer */}
-      {showComposer && (
-        <EmailComposer
-          brigadnikId={brigadnikId}
-          brigadnikEmail={brigadnikEmail}
-          onSuccess={() => setShowComposer(false)}
-        />
-      )}
+      {/* View switcher timeline / konverzace */}
+      <div className="flex gap-2 border-b">
+        <button
+          type="button"
+          onClick={() => setView("timeline")}
+          className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            view === "timeline"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+          aria-pressed={view === "timeline"}
+        >
+          Historie komunikace
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("konverzace")}
+          className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            view === "konverzace"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+          aria-pressed={view === "konverzace"}
+        >
+          Konverzace ({threads.length})
+        </button>
+      </div>
 
-      {/* Conversations */}
-      {threads.length === 0 ? (
+      {view === "timeline" ? (
+        <KomunikaceTimeline items={timeline} />
+      ) : threads.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
           <p>Zatím žádná emailová komunikace</p>
-          <p className="text-sm mt-1">Klikněte na "Nový email" výše</p>
+          <p className="text-sm mt-1">Klikněte na „Nový email" výše</p>
         </div>
       ) : (
         <div className="space-y-2">
-          <h4 className="text-sm font-medium text-muted-foreground">Konverzace</h4>
           {threads.map((thread) => (
             <Link
               key={thread.id}

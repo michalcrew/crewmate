@@ -1,11 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Search } from "lucide-react"
 import type { EmailThread, ConversationStatus } from "@/types/email"
 import { ConversationStatusBadge } from "./conversation-status-badge"
+import { InboxRowActions } from "./inbox-row-actions"
+import { MarkAllReadButton } from "./mark-all-read-button"
 import { cn } from "@/lib/utils"
 
 const STATUS_TABS: { label: string; value: ConversationStatus | undefined; color: string }[] = [
@@ -14,6 +16,14 @@ const STATUS_TABS: { label: string; value: ConversationStatus | undefined; color
   { label: "Čeká na nás", value: "ceka_na_nas", color: "bg-orange-500" },
   { label: "Čeká na brigádníka", value: "ceka_na_brigadnika", color: "bg-yellow-500" },
   { label: "Vyřešené", value: "vyreseno", color: "bg-green-500" },
+]
+
+type InboxFilter = "vse" | "neprecteno" | "archivovano"
+
+const INBOX_TABS: { label: string; value: InboxFilter }[] = [
+  { label: "Všechny", value: "vse" },
+  { label: "Nepřečtené", value: "neprecteno" },
+  { label: "Archivované", value: "archivovano" },
 ]
 
 function formatRelativeTime(dateStr: string): string {
@@ -31,7 +41,6 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" })
 }
 
-/** Get display name for thread — brigadník name or sender info */
 function getThreadDisplayName(thread: EmailThread): string {
   if (thread.brigadnik) {
     return `${thread.brigadnik.jmeno} ${thread.brigadnik.prijmeni}`
@@ -51,9 +60,9 @@ function getThreadInitials(thread: EmailThread): string {
 
 export function InboxLayout({
   threads,
-  total,
+  total: _total,
   currentStatus,
-  currentPage,
+  currentPage: _currentPage,
 }: {
   threads: EmailThread[]
   total: number
@@ -63,10 +72,21 @@ export function InboxLayout({
   const router = useRouter()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [inboxFilter, setInboxFilter] = useState<InboxFilter>("vse")
 
-  // Client-side search filtering (name, email, subject, sender)
+  // F-0014 1F — filtr podle read/archived (client-side dokud Backend neudělá partial index query)
+  const afterInboxFilter = useMemo(() => {
+    return threads.filter((t) => {
+      const archived = t.archived ?? false
+      if (inboxFilter === "archivovano") return archived === true
+      if (archived) return false
+      if (inboxFilter === "neprecteno") return (t.is_read ?? false) === false
+      return true
+    })
+  }, [threads, inboxFilter])
+
   const filteredThreads = searchQuery.trim()
-    ? threads.filter((t) => {
+    ? afterInboxFilter.filter((t) => {
         const q = searchQuery.toLowerCase()
         const name = t.brigadnik
           ? `${t.brigadnik.jmeno} ${t.brigadnik.prijmeni}`.toLowerCase()
@@ -79,26 +99,59 @@ export function InboxLayout({
         return name.includes(q) || email.includes(q) || subject.includes(q)
           || preview.includes(q) || senderName.includes(q) || senderEmail.includes(q)
       })
-    : threads
+    : afterInboxFilter
+
+  const unreadCount = threads.filter((t) => (t.is_read ?? false) === false && !(t.archived ?? false)).length
 
   return (
     <div className="flex-1 flex flex-col gap-4 p-4">
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
         <input
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Hledat v emailech (předmět, jméno, email)..."
           className="w-full border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Hledat v emailech"
         />
       </div>
 
-      {/* Filter tabs */}
+      {/* F-0014 1F: inbox filter tabs + batch action */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex gap-1" role="tablist" aria-label="Filtr doručené">
+          {INBOX_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              aria-selected={inboxFilter === tab.value}
+              onClick={() => setInboxFilter(tab.value)}
+              className={cn(
+                "px-3 py-1.5 text-sm rounded-lg transition-colors",
+                inboxFilter === tab.value
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted"
+              )}
+            >
+              {tab.label}
+              {tab.value === "neprecteno" && unreadCount > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[1rem] rounded-full bg-background/30 text-[10px] font-medium px-1">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        {unreadCount > 0 && inboxFilter !== "archivovano" && <MarkAllReadButton />}
+      </div>
+
+      {/* Status filter tabs */}
       <div className="flex gap-2 flex-wrap">
         {STATUS_TABS.map((tab) => (
           <button
             key={tab.label}
+            type="button"
             onClick={() => {
               const params = new URLSearchParams()
               if (tab.value) params.set("status", tab.value)
@@ -110,9 +163,10 @@ export function InboxLayout({
                 ? "bg-primary text-primary-foreground border-primary"
                 : "bg-background border-border hover:bg-muted"
             )}
+            aria-pressed={currentStatus === tab.value}
           >
             {tab.color && (
-              <span className={cn("inline-block w-2 h-2 rounded-full mr-1.5", tab.color)} />
+              <span className={cn("inline-block w-2 h-2 rounded-full mr-1.5", tab.color)} aria-hidden="true" />
             )}
             {tab.label}
           </button>
@@ -128,6 +182,11 @@ export function InboxLayout({
                 <p className="text-lg font-medium">Nic nenalezeno</p>
                 <p className="text-sm mt-1">Zkuste jiný hledaný výraz</p>
               </>
+            ) : inboxFilter === "archivovano" ? (
+              <>
+                <p className="text-lg font-medium">Archiv je prázdný</p>
+                <p className="text-sm mt-1">Archivované konverzace se zobrazí zde</p>
+              </>
             ) : (
               <>
                 <p className="text-lg font-medium">Zatím žádné emaily</p>
@@ -138,40 +197,58 @@ export function InboxLayout({
         </div>
       ) : (
         <div className="flex flex-col gap-1">
-          {filteredThreads.map((thread) => (
-            <Link
-              key={thread.id}
-              href={`/app/emaily/${thread.id}`}
-              className={cn(
-                "flex items-center gap-3 p-3 rounded-lg border transition-colors hover:bg-muted",
-                selectedId === thread.id && "bg-muted border-primary"
-              )}
-              onClick={() => setSelectedId(thread.id)}
-            >
-              {/* Avatar */}
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-medium shrink-0">
-                {getThreadInitials(thread)}
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium truncate">
-                    {getThreadDisplayName(thread)}
-                  </span>
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    {formatRelativeTime(thread.last_message_at)}
-                  </span>
+          {filteredThreads.map((thread) => {
+            const isUnread = (thread.is_read ?? false) === false && !(thread.archived ?? false)
+            return (
+              <div
+                key={thread.id}
+                className={cn(
+                  "group flex items-center gap-3 p-3 rounded-lg border transition-colors hover:bg-muted relative",
+                  selectedId === thread.id && "bg-muted border-primary",
+                  (thread.archived ?? false) && "opacity-60"
+                )}
+              >
+                {isUnread && (
+                  <span
+                    aria-label="Nepřečteno"
+                    className="absolute left-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary"
+                  />
+                )}
+                <Link
+                  href={`/app/emaily/${thread.id}`}
+                  onClick={() => setSelectedId(thread.id)}
+                  className="flex-1 flex items-center gap-3 min-w-0"
+                >
+                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-medium shrink-0">
+                    {getThreadInitials(thread)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={cn("truncate", isUnread ? "font-semibold" : "font-medium")}>
+                        {getThreadDisplayName(thread)}
+                      </span>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {formatRelativeTime(thread.last_message_at)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={cn("text-sm truncate", isUnread ? "text-foreground" : "text-muted-foreground")}>
+                        {thread.last_message_preview || thread.subject}
+                      </span>
+                      <ConversationStatusBadge status={thread.status} size="sm" />
+                    </div>
+                  </div>
+                </Link>
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  <InboxRowActions
+                    threadId={thread.id}
+                    isRead={thread.is_read ?? false}
+                    archived={thread.archived ?? false}
+                  />
                 </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-sm text-muted-foreground truncate">
-                    {thread.last_message_preview || thread.subject}
-                  </span>
-                  <ConversationStatusBadge status={thread.status} size="sm" />
-                </div>
               </div>
-            </Link>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

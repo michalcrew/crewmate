@@ -31,7 +31,7 @@ import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button
 import { GenerateDppButton, GenerateProhlaseniButton, SendDppButton, UploadPodpisForm } from "@/components/brigadnici/dpp-actions"
 import { EditBrigadnikDialog } from "@/components/brigadnici/edit-brigadnik-dialog"
 import { BrigadnikEmailTab } from "@/components/email/brigadnik-email-tab"
-import { getThreads } from "@/lib/actions/email"
+import { getThreads, getKomunikaceTimeline } from "@/lib/actions/email"
 import { validateDPPFields, validateProhlaseniFields } from "@/lib/documents/dpp-data-validator"
 
 export const metadata: Metadata = {
@@ -47,12 +47,13 @@ export default async function BrigadnikDetailPage({
   const brigadnik = await getBrigadnikById(id)
   if (!brigadnik) notFound()
 
-  const [pipeline, smluvniStav, historie, zkusenosti, emailData] = await Promise.all([
+  const [pipeline, smluvniStav, historie, zkusenosti, emailData, komunikaceTimeline] = await Promise.all([
     getBrigadnikPipeline(id),
     getBrigadnikSmluvniStav(id),
     getBrigadnikHistorie(id),
     getBrigadnikZkusenosti(id),
     getThreads({ status_filter: undefined, page: 1, limit: 50 }),
+    getKomunikaceTimeline(id, { limit: 100 }),
   ])
 
   // Filter threads for this brigadník
@@ -103,7 +104,7 @@ export default async function BrigadnikDetailPage({
         <div className="ml-auto flex gap-2">
           <EditBrigadnikDialog brigadnik={brigadnik} />
           {!brigadnik.dotaznik_vyplnen && (
-            <SendDotaznikButton brigadnikId={brigadnik.id} />
+            <SendDotaznikButton brigadnikId={brigadnik.id} brigadnikEmail={brigadnik.email} />
           )}
         </div>
       </div>
@@ -365,6 +366,7 @@ export default async function BrigadnikDetailPage({
                 missingDppFields={dppValidation.missing}
                 missingProhlaseniFields={prohlaseniValidation.missing}
                 threads={brigadnikThreads}
+                timeline={komunikaceTimeline}
               />
             </CardContent>
           </Card>

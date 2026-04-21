@@ -16,6 +16,7 @@ export async function getFormularByToken(token: string) {
     .select("*, brigadnik:brigadnici(id, jmeno, prijmeni, email, telefon)")
     .eq("token", token)
     .eq("vyplneno", false)
+    .is("invalidated_at", null)
     .single()
 
   if (!tokenData) return null
@@ -176,7 +177,39 @@ export async function submitDotaznik(formData: FormData) {
   return { success: true, brigadnik_id: brigadnikId }
 }
 
-export async function sendDotaznikEmail(brigadnikId: string) {
+/**
+ * F-0014 1E — sendDotaznikEmail s optional force-resend.
+ *
+ * Bez force:
+ *   - pokud má brigádník validní pending token (invalidated_at IS NULL,
+ *     expiruje_at > now()), vrátí `{ error, hasPending: true, pendingAge }`
+ *     pro UI dialog.
+ *   - jinak normální flow (insert token + send).
+ *
+ * Force=true:
+ *   - UPDATE formular_tokeny SET invalidated_at=now(), invalidation_reason='resend_requested'
+ *     WHERE brigadnik_id=? AND invalidated_at IS NULL AND vyplneno=false
+ *   - INSERT nového tokenu
+ *   - send
+ *   - historie typ='dotaznik_odeslan' metadata { resent, invalidated_count }
+ */
+export type SendDotaznikResult =
+  | { success: true; tokenUrl: string; resent?: boolean }
+  | { error: string; hasPending?: true; pendingAge?: string }
+
+function formatPendingAge(createdAt: string): string {
+  const ms = Date.now() - new Date(createdAt).getTime()
+  const days = Math.max(0, Math.floor(ms / 86_400_000))
+  if (days === 0) return "dnes"
+  if (days === 1) return "1 den"
+  if (days < 5) return `${days} dny`
+  return `${days} dní`
+}
+
+export async function sendDotaznikEmail(
+  brigadnikId: string,
+  force: boolean = false
+): Promise<SendDotaznikResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
@@ -190,6 +223,76 @@ export async function sendDotaznikEmail(brigadnikId: string) {
     .single()
 
   if (!brigadnik) return { error: "Brigádník nenalezen" }
+  if (!brigadnik.email) return { error: "Brigádník nemá email" }
+
+  // F-0014 1E: detekce pending (validní, neinvalidovaný) tokenu.
+  const nowIso = new Date().toISOString()
+  const { data: pendingToken } = await adminClient
+    .from("formular_tokeny")
+    .select("token, vyplneno, expiruje_at, invalidated_at, created_at")
+    .eq("brigadnik_id", brigadnikId)
+    .eq("vyplneno", false)
+    .is("invalidated_at", null)
+    .gt("expiruje_at", nowIso)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (pendingToken && !force) {
+    return {
+      error: "Brigádník má nevyplněný dotazník",
+      hasPending: true,
+      pendingAge: formatPendingAge(pendingToken.created_at),
+    }
+  }
+
+  // Pattern F-0013 HF4c: admin client fallback pro users lookup
+  let internalUserId: string | null = null
+  {
+    const { data: serverUser } = await supabase
+      .from("users")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .single()
+    internalUserId = serverUser?.id ?? null
+    if (!internalUserId) {
+      const { data: adminUser } = await adminClient
+        .from("users")
+        .select("id")
+        .eq("auth_user_id", user.id)
+        .single()
+      internalUserId = adminUser?.id ?? null
+    }
+  }
+
+  // Force path: invalidace starých pending tokenů
+  let invalidatedCount = 0
+  if (force && pendingToken) {
+    const { data: invalidated, error: invErr } = await adminClient
+      .from("formular_tokeny")
+      .update({
+        invalidated_at: nowIso,
+        invalidation_reason: "resend_requested",
+      })
+      .eq("brigadnik_id", brigadnikId)
+      .eq("vyplneno", false)
+      .is("invalidated_at", null)
+      .select("id")
+
+    if (invErr) {
+      console.error("Invalidace tokenů selhala:", invErr)
+      return { error: "Nepodařilo se zneplatnit předchozí odkaz" }
+    }
+    invalidatedCount = invalidated?.length ?? 0
+
+    await adminClient.from("historie").insert({
+      brigadnik_id: brigadnikId,
+      user_id: internalUserId,
+      typ: "dotaznik_token_invalidovan",
+      popis: `Starý dotazníkový odkaz zneplatněn (resend, ${invalidatedCount}×)`,
+      metadata: { reason: "resend_requested", count: invalidatedCount },
+    })
+  }
 
   const { data: token, error: tokenError } = await adminClient
     .from("formular_tokeny")
@@ -223,19 +326,21 @@ export async function sendDotaznikEmail(brigadnikId: string) {
     return { error: "Nepodařilo se odeslat email" }
   }
 
-  const { data: internalUser } = await adminClient
-    .from("users")
-    .select("id")
-    .eq("auth_user_id", user.id)
-    .single()
-
   await adminClient.from("historie").insert({
     brigadnik_id: brigadnikId,
-    user_id: internalUser?.id,
-    typ: "email_odeslan",
+    user_id: internalUserId,
+    typ: "dotaznik_odeslan",
     popis: `Dotazník odeslán na ${brigadnik.email}`,
+    metadata: {
+      resent: force && invalidatedCount > 0,
+      invalidated_count: invalidatedCount,
+    },
   })
 
   revalidatePath(`/app/brigadnici/${brigadnikId}`)
-  return { success: true }
+  return {
+    success: true,
+    tokenUrl: link,
+    ...(force && invalidatedCount > 0 ? { resent: true } : {}),
+  }
 }
