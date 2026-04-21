@@ -365,62 +365,7 @@ export async function getDashboardDataV2(
   }
 }
 
-// ================================================================
-// Legacy: getDashboardData (zachováno pro back-compat — current page.tsx)
-// ================================================================
-
-/** @deprecated Použij `getDashboardDataV2(role)` + helpers. Zachováno jen
- *  aby existující `app/page.tsx` nekrachl během migrace na role-aware UI. */
-export async function getDashboardData() {
-  const supabase = await createClient()
-
-  const { data: nabidky } = await supabase
-    .from("nabidky")
-    .select("id, nazev, pocet_lidi, typ, publikovano, pipeline_entries(count)")
-    .neq("typ", "ukoncena")
-    .order("created_at", { ascending: false })
-
-  const today = new Date().toISOString().slice(0, 10)
-  const future = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
-  const { data: akce } = await supabase
-    .from("akce")
-    .select(
-      "id, nazev, datum, cas_od, misto, pocet_lidi, stav, prirazeni(count)"
-    )
-    .gte("datum", today)
-    .lte("datum", future)
-    .in("stav", ["planovana", "probehla"])
-    .order("datum", { ascending: true })
-    .limit(10)
-
-  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
-  const { data: noviZajemci } = await supabase
-    .from("pipeline_entries")
-    .select("id")
-    .eq("stav", "zajemce")
-    .gte("created_at", weekAgo)
-
-  const { count: brigadniciCount } = await supabase
-    .from("brigadnici")
-    .select("id", { count: "exact", head: true })
-    .eq("aktivni", true)
-
-  const { data: chybejiciDpp } = await supabase
-    .from("v_chybejici_dpp")
-    .select(
-      "id, jmeno, prijmeni, telefon, akce_nazev, akce_datum, dpp_stav"
-    )
-    .gte("akce_datum", today)
-    .limit(10)
-
-  return {
-    nabidky: nabidky ?? [],
-    akce: akce ?? [],
-    noviZajemciCount: noviZajemci?.length ?? 0,
-    brigadniciCount: brigadniciCount ?? 0,
-    chybejiciDpp: chybejiciDpp ?? [],
-  }
-}
+// F-0020 cleanup: legacy `getDashboardData` smazán — nahrazeno `getDashboardDataV2(role)`.
 
 /**
  * Resolve current user's role for dashboard branching.
