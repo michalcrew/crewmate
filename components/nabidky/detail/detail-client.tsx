@@ -19,10 +19,16 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Calendar, MapPin, Copy, Send, ClipboardList, Loader2 } from "lucide-react"
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
+import { Calendar, MapPin, Copy, Send, ClipboardList, Loader2, MoreHorizontal, Ban } from "lucide-react"
 import { PIPELINE_STATES } from "@/lib/constants"
 import { updatePipelineStav } from "@/lib/actions/pipeline"
 import { assignBrigadnikToAkce, unassignBrigadnikFromAkce, odeslatBriefing } from "@/lib/actions/akce"
+import { DokumentacniStavBadge } from "@/components/brigadnici/dokumentacni-stav-badge"
+import { AkceStavSelector } from "@/components/akce/akce-stav-selector"
+import { ZrusitAkciDialog } from "@/components/akce/zrusit-akci-dialog"
 
 // ========== Types ==========
 
@@ -73,12 +79,14 @@ export function NabidkaDetailClient({
   pipeline,
   akce,
   readOnly,
+  dokumentacniMap,
 }: {
   nabidkaId: string
   nabidkaTyp: string
   pipeline: PipelineEntry[]
   akce: AkceWithPrirazeni[]
   readOnly: boolean
+  dokumentacniMap?: Record<string, string>
 }) {
   return (
     <div className="space-y-8">
@@ -88,6 +96,7 @@ export function NabidkaDetailClient({
         akce={akce}
         readOnly={readOnly}
         nabidkaTyp={nabidkaTyp}
+        dokumentacniMap={dokumentacniMap ?? {}}
       />
     </div>
   )
@@ -310,11 +319,13 @@ function AssignmentMatrix({
   akce,
   readOnly,
   nabidkaTyp,
+  dokumentacniMap,
 }: {
   pipeline: PipelineEntry[]
   akce: AkceWithPrirazeni[]
   readOnly: boolean
   nabidkaTyp: string
+  dokumentacniMap: Record<string, string>
 }) {
   const eligible = useMemo(
     () => pipeline.filter(e => e.brigadnik && ELIGIBLE_STAVS.includes(e.stav)),
@@ -411,12 +422,35 @@ function AssignmentMatrix({
                   const b = e.brigadnik!
                   const dppOk = e.dpp_stav === "podepsano"
                   const prohlaseniOk = e.prohlaseni_stav === "podepsano"
+                  const dokStav = dokumentacniMap[b.id]
                   return (
                     <tr key={e.id} className="border-b last:border-b-0 hover:bg-muted/30">
                       <td className="sticky left-0 bg-card group-hover:bg-muted/30 px-3 py-2 border-r">
+                        {/* Row 1: jméno + telefon */}
                         <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
                           {b.prijmeni} {b.jmeno}
                         </Link>
+                        <p className="text-[11px] text-muted-foreground leading-tight">{b.telefon}</p>
+
+                        {/* Row 3: Dokumentační status badge (F-0013) — F-0015 US-1F.
+                            Mobile < 640px: skryt v details/summary. */}
+                        {dokStav && (
+                          <>
+                            <div className="mt-1 hidden sm:block">
+                              <DokumentacniStavBadge stav={dokStav} />
+                            </div>
+                            <details className="mt-1 sm:hidden">
+                              <summary className="text-[10px] text-muted-foreground cursor-pointer select-none">
+                                Dokumentace
+                              </summary>
+                              <div className="mt-1">
+                                <DokumentacniStavBadge stav={dokStav} />
+                              </div>
+                            </details>
+                          </>
+                        )}
+
+                        {/* Row 4: DPP + Prohlášení + Hodnocení + YTD */}
                         <div className="flex flex-wrap items-center gap-1 mt-1">
                           {dppOk && <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[9px] h-4">DPP</Badge>}
                           {prohlaseniOk && <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[9px] h-4">Prohl.</Badge>}
@@ -487,6 +521,9 @@ function AkceHeaderCell({
 }) {
   const [copied, setCopied] = useState(false)
   const [briefingOpen, setBriefingOpen] = useState(false)
+  const [zrusitOpen, setZrusitOpen] = useState(false)
+  const isZrusena = akce.stav === "zrusena"
+  const isProbehla = akce.stav === "probehla"
 
   // Count assigned from optimistic state
   const assignedCount = eligible.reduce((sum, e) => {
@@ -507,10 +544,42 @@ function AkceHeaderCell({
   }
 
   return (
-    <th className="text-left align-top font-normal px-3 py-2 min-w-[180px] border-r border-b-0">
-      <Link href={`/app/akce/${akce.id}`} className="block font-medium hover:underline mb-1">
-        {akce.nazev}
-      </Link>
+    <th
+      className={`text-left align-top font-normal px-3 py-2 min-w-[180px] border-r border-b-0 ${
+        isZrusena ? "bg-[repeating-linear-gradient(45deg,_transparent_0_6px,_rgba(239,68,68,0.04)_6px_12px)] opacity-70" : ""
+      }`}
+    >
+      <div className="flex items-start justify-between gap-1 mb-1">
+        <Link
+          href={`/app/akce/${akce.id}`}
+          className={`block font-medium hover:underline ${isZrusena ? "line-through text-muted-foreground" : ""}`}
+        >
+          {akce.nazev}
+        </Link>
+        {!readOnly && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label="Menu akce">
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem render={<Link href={`/app/akce/${akce.id}`} />}>
+                Upravit / Detail
+              </DropdownMenuItem>
+              {akce.stav === "planovana" && (
+                <DropdownMenuItem variant="destructive" onClick={() => setZrusitOpen(true)}>
+                  <Ban className="h-4 w-4" />
+                  Zrušit akci
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+
       <div className="flex flex-col gap-0.5 text-xs text-muted-foreground mb-2">
         <span className="flex items-center gap-1">
           <Calendar className="h-3 w-3" />
@@ -526,8 +595,30 @@ function AkceHeaderCell({
         )}
       </div>
 
+      {/* Inline stav selector (F-0015 US-1E-2) */}
+      {!readOnly && (
+        <div className="mb-2">
+          <AkceStavSelector
+            akceId={akce.id}
+            akceName={akce.nazev}
+            akceDate={akce.datum}
+            currentStav={akce.stav ?? "planovana"}
+            size="sm"
+          />
+        </div>
+      )}
+
+      {/* ZrusitAkciDialog z menu */}
+      <ZrusitAkciDialog
+        open={zrusitOpen}
+        onOpenChange={setZrusitOpen}
+        akceId={akce.id}
+        akceName={akce.nazev}
+        akceDate={akce.datum}
+      />
+
       {/* Kapacita progress */}
-      <div className="mb-2">
+      <div className={`mb-2 ${isProbehla ? "opacity-70" : ""}`}>
         <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-0.5">
           <span>Obsazenost</span>
           <span className="tabular-nums">{assignedCount}{kapacita > 0 ? `/${kapacita}` : ""}</span>

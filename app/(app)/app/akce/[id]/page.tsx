@@ -11,6 +11,8 @@ import {
 import { getAkceById, getAkcePrirazeni } from "@/lib/actions/akce"
 import { getBrigadnici } from "@/lib/actions/brigadnici"
 import { AddPrirazeniDialog } from "@/components/akce/add-prirazeni-dialog"
+import { AkceStavSelector } from "@/components/akce/akce-stav-selector"
+import { AkceDetailZrusitButton } from "@/components/akce/akce-detail-zrusit-button"
 
 export const metadata: Metadata = { title: "Detail akce" }
 
@@ -34,19 +36,40 @@ export default async function AkceDetailPage({
     .filter(b => !prirazeniIds.has(b.id))
     .map(b => ({ id: b.id, jmeno: b.jmeno, prijmeni: b.prijmeni, telefon: b.telefon }))
 
+  const akceStav = (akce.stav ?? "planovana") as "planovana" | "probehla" | "zrusena"
+  const isZrusena = akceStav === "zrusena"
+  const isProbehla = akceStav === "probehla"
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
         <Link href="/app/akce">
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /><span className="sr-only">Zpět</span></Button>
         </Link>
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-semibold">{akce.nazev}</h1>
           <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
             <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />{new Date(akce.datum).toLocaleDateString("cs-CZ")}</span>
             {akce.cas_od && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{akce.cas_od.slice(0, 5)}{akce.cas_do ? ` — ${akce.cas_do.slice(0, 5)}` : ""}</span>}
             {akce.misto && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{akce.misto}</span>}
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Inline stav selector (F-0015 US-1E-1) */}
+          <AkceStavSelector
+            akceId={id}
+            akceName={akce.nazev}
+            akceDate={akce.datum}
+            currentStav={akceStav}
+          />
+          {/* Zrušit akci button — skrytý pro zrušené + proběhlé */}
+          {!isZrusena && !isProbehla && (
+            <AkceDetailZrusitButton
+              akceId={id}
+              akceName={akce.nazev}
+              akceDate={akce.datum}
+            />
+          )}
         </div>
       </div>
 
@@ -82,10 +105,21 @@ export default async function AkceDetailPage({
         </Card>
       </div>
 
+      {isZrusena && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          Akce je <strong>zrušená</strong>. Úpravy ani přidávání brigádníků nejsou možné.
+        </div>
+      )}
+      {isProbehla && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          Akce je <strong>proběhlá</strong>. Editace je omezena na poznámky a počet lidí.
+        </div>
+      )}
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Přiřazení brigádníci</CardTitle>
-          <AddPrirazeniDialog akceId={id} brigadnici={availableBrigadnici} />
+          {!isZrusena && <AddPrirazeniDialog akceId={id} brigadnici={availableBrigadnici} />}
         </CardHeader>
         <CardContent>
           {prirazeni.length === 0 ? (

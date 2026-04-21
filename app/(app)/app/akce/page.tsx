@@ -1,30 +1,72 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Plus, Calendar as CalendarIcon } from "lucide-react"
+import { Plus, Calendar as CalendarIcon, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
-import { getAkce } from "@/lib/actions/akce"
+import { getAkce, getAkceCounts } from "@/lib/actions/akce"
 import { PageHeader } from "@/components/shared/page-header"
-import { StatsCard } from "@/components/shared/stats-card"
 import { StatusBadge } from "@/components/shared/status-badge"
 import { EmptyState } from "@/components/shared/empty-state"
+import { AkceTabs } from "@/components/akce/akce-tabs"
+import { AkceRowActions } from "@/components/akce/akce-row-actions"
 
 export const metadata: Metadata = { title: "Akce" }
 
-export default async function AkcePage() {
-  const akce = await getAkce()
+type TabValue = "planovana" | "probehla" | "zrusena" | "all"
+const VALID_STAVS: TabValue[] = ["planovana", "probehla", "zrusena", "all"]
 
-  const planovane = akce.filter(a => a.stav === "planovana").length
-  const probehle = akce.filter(a => a.stav === "probehla").length
-  const zrusene = akce.filter(a => a.stav === "zrusena").length
+function normalizeStav(raw?: string): TabValue {
+  if (raw && (VALID_STAVS as string[]).includes(raw)) return raw as TabValue
+  return "planovana"
+}
+
+export default async function AkcePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ stav?: string }>
+}) {
+  const sp = (await searchParams) ?? {}
+  const stav = normalizeStav(sp.stav)
+
+  // getAkce() internally fires autoUkoncitProbeleAkceBatch() (rate-limited).
+  const [{ data: akce, totalCount }, counts] = await Promise.all([
+    getAkce({ stav }),
+    getAkceCounts(),
+  ])
+
+  const limitReached = akce.length >= 500 && totalCount > 500
+
+  const emptyConfig: Record<TabValue, { title: string; description: string; showCta: boolean }> = {
+    planovana: {
+      title: "Žádné plánované akce",
+      description: "Zakázky najdete v /app/nabidky a přidáte jim akce z detailu zakázky.",
+      showCta: true,
+    },
+    probehla: {
+      title: "Žádné proběhlé akce v tomto filtru",
+      description: "Proběhlé akce se zde zobrazí, jakmile se některá plánovaná automaticky uzavře.",
+      showCta: false,
+    },
+    zrusena: {
+      title: "Žádné zrušené akce",
+      description: "Zrušit akci lze z detailu, z menu v listu, nebo z matrix sloupce zakázky.",
+      showCta: false,
+    },
+    all: {
+      title: "Žádné akce v systému",
+      description: "Vytvořte první akci nebo ji přidejte z detailu zakázky.",
+      showCta: true,
+    },
+  }
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Akce"
+        description={totalCount > 0 ? `Zobrazuji ${akce.length} z ${totalCount} akcí` : undefined}
         actions={
           <Link href="/app/akce/nova">
             <Button><Plus className="h-4 w-4 mr-1.5" />Nová akce</Button>
@@ -32,22 +74,27 @@ export default async function AkcePage() {
         }
       />
 
-      {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <StatsCard icon={CalendarIcon} label="Plánované" value={planovane} />
-        <StatsCard icon={CalendarIcon} label="Proběhlé" value={probehle} />
-        <StatsCard icon={CalendarIcon} label="Zrušené" value={zrusene} />
-      </div>
+      <AkceTabs active={stav} counts={counts} />
+
+      {limitReached && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <Info className="h-4 w-4 mt-0.5 shrink-0" />
+          <p>
+            Zobrazeno prvních 500 akcí z {totalCount}. Pro starší historii použijte měsíční filter
+            (připravuje se ve F-0018) nebo detail zakázky.
+          </p>
+        </div>
+      )}
 
       <Card className="shadow-sm overflow-hidden">
         <CardContent className="p-0">
           {akce.length === 0 ? (
             <EmptyState
               icon={CalendarIcon}
-              title="Žádné akce"
-              description="Naplánujte první akci a přiřaďte brigádníky."
-              actionLabel="Vytvořit akci"
-              actionHref="/app/akce/nova"
+              title={emptyConfig[stav].title}
+              description={emptyConfig[stav].description}
+              actionLabel={emptyConfig[stav].showCta ? "Vytvořit akci" : undefined}
+              actionHref={emptyConfig[stav].showCta ? "/app/akce/nova" : undefined}
             />
           ) : (
             <div className="overflow-x-auto">
@@ -60,6 +107,7 @@ export default async function AkcePage() {
                     <TableHead>Nabídka</TableHead>
                     <TableHead>Kapacita</TableHead>
                     <TableHead>Stav</TableHead>
+                    <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -108,6 +156,14 @@ export default async function AkcePage() {
                           >
                             {a.stav === "planovana" ? "Plánovaná" : a.stav === "probehla" ? "Proběhla" : "Zrušená"}
                           </StatusBadge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <AkceRowActions
+                            akceId={a.id}
+                            akceName={a.nazev}
+                            akceDate={a.datum}
+                            akceStav={a.stav ?? "planovana"}
+                          />
                         </TableCell>
                       </TableRow>
                     )
