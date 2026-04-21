@@ -8,6 +8,9 @@ import {
 } from "@/components/ui/table"
 import { getBrigadnici } from "@/lib/actions/brigadnici"
 import { BrigadniciSearch } from "@/components/brigadnici/brigadnici-search"
+import { BrigadniciListFilters } from "@/components/brigadnici/brigadnici-list-filters"
+import { FakturantBadge } from "@/components/brigadnici/fakturant-badge"
+import { StarRating } from "@/components/ui/star-rating"
 import { DPP_STATES } from "@/lib/constants"
 import { PageHeader } from "@/components/shared/page-header"
 import { StatusBadge } from "@/components/shared/status-badge"
@@ -20,10 +23,24 @@ export const metadata: Metadata = {
 export default async function BrigadniciPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; typ?: string; stav?: string }>
 }) {
   const params = await searchParams
-  const brigadnici = await getBrigadnici({ search: params.q })
+
+  // F-0016 US-1D-1 / US-1G-1: server-side filter (Backend `getBrigadnici` accepts
+  // `typFilter` + `stavFilter`; do NOT post-filter on client — chokepoint for pagination later).
+  const typFilter: "all" | "brigadnik" | "osvc" =
+    params.typ === "brigadnik" || params.typ === "osvc" ? params.typ : "all"
+  const stavFilter = (params.stav ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  const brigadnici = await getBrigadnici({
+    search: params.q,
+    typFilter,
+    stavFilter: stavFilter.length > 0 ? stavFilter : undefined,
+  })
 
   return (
     <div className="space-y-5">
@@ -38,6 +55,8 @@ export default async function BrigadniciPage({
       />
 
       <BrigadniciSearch />
+
+      <BrigadniciListFilters />
 
       <Card className="shadow-sm overflow-hidden">
         <CardContent className="p-0">
@@ -61,6 +80,7 @@ export default async function BrigadniciPage({
                     <TableHead>Stav</TableHead>
                     <TableHead>DPP</TableHead>
                     <TableHead className="text-center">Hodnocení</TableHead>
+                    <TableHead className="text-right hidden lg:table-cell">Hodiny/rok</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -70,13 +90,17 @@ export default async function BrigadniciPage({
                     const hasDpp = (b as { dpp_tento_rok?: string }).dpp_tento_rok === "podepsano"
                     const needsAction = !hasData || !hasDpp
                     const rating = Number(b.prumerne_hodnoceni)
+                    const hodinyRok = Number((b as { hodiny_rok?: number }).hodiny_rok ?? 0)
 
                     return (
                       <TableRow key={b.id} className={needsAction ? "bg-amber-50/50" : ""}>
                         <TableCell>
-                          <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
-                            {b.prijmeni} {b.jmeno}
-                          </Link>
+                          <div className="flex items-center gap-2">
+                            <FakturantBadge typ={(b as { typ_brigadnika?: string | null }).typ_brigadnika} variant="prefix" />
+                            <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
+                              {b.prijmeni} {b.jmeno}
+                            </Link>
+                          </div>
                         </TableCell>
                         <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">{b.telefon}</TableCell>
                         <TableCell className="hidden md:table-cell text-muted-foreground text-sm">{b.email}</TableCell>
@@ -108,20 +132,13 @@ export default async function BrigadniciPage({
                           </StatusBadge>
                         </TableCell>
                         <TableCell className="text-center">
-                          {rating > 0 ? (
-                            <div className="flex items-center justify-center gap-0.5">
-                              {[1, 2, 3, 4, 5].map(star => (
-                                <span
-                                  key={star}
-                                  className={`text-xs ${star <= Math.round(rating) ? "text-amber-400" : "text-gray-200"}`}
-                                >
-                                  ★
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
+                          <StarRating
+                            value={rating}
+                            count={(b as { pocet_hodnoceni?: number }).pocet_hodnoceni}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums hidden lg:table-cell">
+                          {hodinyRok > 0 ? `${Math.round(hodinyRok)} h` : "—"}
                         </TableCell>
                       </TableRow>
                     )

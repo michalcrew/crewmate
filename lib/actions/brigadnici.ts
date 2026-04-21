@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { maybeEncryptDic } from "@/lib/utils/crypto"
+import { maybeEncryptDic, encrypt } from "@/lib/utils/crypto"
 import { z } from "zod"
 import {
   updateBrigadnikTypSchema,
   updateBrigadnikOsvcFieldsSchema,
 } from "@/lib/schemas/dotaznik"
+import { DOKUMENTACNI_STAV_RANK, RANK_TO_DOKUMENTACNI_STAV } from "@/lib/schemas/hodnoceni"
 import { maybeAutoTransitionPipeline } from "./pipeline"
 
 const brigadnikSchema = z.object({
@@ -23,6 +24,10 @@ const brigadnikSchema = z.object({
 export async function getBrigadnici(filter?: {
   search?: string
   aktivni?: boolean
+  /** F-0016: filter dle typ_brigadnika. 'all' = oba. */
+  typFilter?: "all" | "brigadnik" | "osvc"
+  /** F-0016: multi-select dokumentační status (global = MAX priority přes pipeline). */
+  stavFilter?: string[]
 }) {
   const supabase = await createClient()
   let query = supabase
@@ -32,6 +37,14 @@ export async function getBrigadnici(filter?: {
 
   if (filter?.aktivni !== false) {
     query = query.eq("aktivni", true)
+  }
+
+  // F-0016 D-F0016-06: soft-deleted výchozí skryto. VIEW už filtruje
+  // deleted_at IS NULL, ale explicit pojistka (kdyby se volalo přes admin).
+  // Žádný navíc where clause — view se o to stará.
+
+  if (filter?.typFilter && filter.typFilter !== "all") {
+    query = query.eq("typ_brigadnika", filter.typFilter)
   }
 
   if (filter?.search) {
@@ -77,14 +90,51 @@ export async function getBrigadnici(filter?: {
       dppMap.set(s.brigadnik_id, existing)
     }
 
-    const enriched = (data ?? []).map(b => ({
-      ...b,
-      pocet_akci: actionCounts.get(b.id) ?? 0,
-      dpp_tento_rok: dppMap.get(b.id)?.current ?? "zadny",
-      dpp_pristi_rok: dppMap.get(b.id)?.next ?? "zadny",
-    }))
+    // F-0016 US-1G-1: global dokumentační status = MAX priority přes všechny
+    // pipeline entries brigádníka. Viz v_brigadnik_zakazka_status (6 hodnot).
+    // Fallback: brigádník bez pipeline entry → 'osvc' pokud typ=osvc, jinak
+    // 'nevyplnene_udaje'.
+    const { data: stavRows } = await supabase
+      .from("v_brigadnik_zakazka_status")
+      .select("brigadnik_id, dokumentacni_stav")
+      .in("brigadnik_id", brigadnikIds)
 
-    enriched.sort((a, b) => {
+    const globalStavMap = new Map<string, string>()
+    for (const row of stavRows ?? []) {
+      const rank = DOKUMENTACNI_STAV_RANK[row.dokumentacni_stav] ?? 0
+      const existingStav = globalStavMap.get(row.brigadnik_id)
+      const existingRank = existingStav
+        ? (DOKUMENTACNI_STAV_RANK[existingStav] ?? 0)
+        : -1
+      if (rank > existingRank) {
+        globalStavMap.set(row.brigadnik_id, row.dokumentacni_stav)
+      }
+    }
+
+    const enriched = (data ?? []).map(b => {
+      let globalStav = globalStavMap.get(b.id)
+      if (!globalStav) {
+        globalStav =
+          (b as { typ_brigadnika?: string }).typ_brigadnika === "osvc"
+            ? "osvc"
+            : "nevyplnene_udaje"
+      }
+      return {
+        ...b,
+        pocet_akci: actionCounts.get(b.id) ?? 0,
+        dpp_tento_rok: dppMap.get(b.id)?.current ?? "zadny",
+        dpp_pristi_rok: dppMap.get(b.id)?.next ?? "zadny",
+        global_dokumentacni_stav: globalStav,
+      }
+    })
+
+    // F-0016: post-filter podle stavFilter (multi-select). Počítáno app-side
+    // protože global status je computed. Acceptable < 2000 rows (viz architect 3.2).
+    const filteredByStav = filter?.stavFilter && filter.stavFilter.length > 0
+      ? enriched.filter(b => filter.stavFilter!.includes(b.global_dokumentacni_stav))
+      : enriched
+
+    filteredByStav.sort((a, b) => {
       if (b.pocet_akci !== a.pocet_akci) return b.pocet_akci - a.pocet_akci
       const ratingA = Number(a.prumerne_hodnoceni) || 0
       const ratingB = Number(b.prumerne_hodnoceni) || 0
@@ -92,16 +142,89 @@ export async function getBrigadnici(filter?: {
       return (a.prijmeni ?? "").localeCompare(b.prijmeni ?? "")
     })
 
-    return enriched
+    return filteredByStav
   } catch {
     return (data ?? []).map(b => ({
       ...b,
       pocet_akci: 0,
       dpp_tento_rok: "zadny",
       dpp_pristi_rok: "zadny",
+      global_dokumentacni_stav:
+        (b as { typ_brigadnika?: string }).typ_brigadnika === "osvc"
+          ? "osvc"
+          : "nevyplnene_udaje",
     }))
   }
 }
+
+/**
+ * F-0016 US-1A-1: seznam akcí brigádníka split na budoucí + historie.
+ *
+ * - JOIN prirazeni × akce × nabidky (LEFT na nabidku, akce má nabidka_id NULLable).
+ * - Split podle akce.datum vs CURRENT_DATE.
+ * - Budoucí: ASC (nejblíže nahoře), historie: DESC LIMIT 100 (US-1A-1 edge case 8).
+ * - Zahrnuje akce.stav (F-0015) pro "Zrušena" tagging.
+ */
+export async function getBrigadnikAkce(brigadnikId: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("prirazeni")
+    .select(
+      `
+      id, akce_id, status, pozice, poradi_nahradnik,
+      akce:akce(id, nazev, datum, cas_od, cas_do, misto, stav, nabidka_id,
+                nabidka:nabidky(id, nazev))
+    `
+    )
+    .eq("brigadnik_id", brigadnikId)
+    .limit(500)
+
+  if (error || !data) return { budouci: [], historie: [] }
+
+  // Normalize akce object (Supabase JOIN vrací object nebo array dle konfigurace).
+  type Row = typeof data[number]
+  const rows = data.filter((r): r is Row & { akce: NonNullable<Row["akce"]> } => !!r.akce)
+
+  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+  const budouci: typeof rows = []
+  const historie: typeof rows = []
+
+  for (const r of rows) {
+    const akce = Array.isArray(r.akce) ? r.akce[0] : r.akce
+    if (!akce) continue
+    const datum = (akce as { datum: string }).datum
+    if (datum >= today) budouci.push(r)
+    else historie.push(r)
+  }
+
+  budouci.sort((a, b) => {
+    const aa = Array.isArray(a.akce) ? a.akce[0] : a.akce
+    const bb = Array.isArray(b.akce) ? b.akce[0] : b.akce
+    const da = (aa as { datum: string }).datum
+    const db = (bb as { datum: string }).datum
+    if (da !== db) return da.localeCompare(db)
+    const ta = (aa as { cas_od: string | null }).cas_od ?? ""
+    const tb = (bb as { cas_od: string | null }).cas_od ?? ""
+    return ta.localeCompare(tb)
+  })
+
+  historie.sort((a, b) => {
+    const aa = Array.isArray(a.akce) ? a.akce[0] : a.akce
+    const bb = Array.isArray(b.akce) ? b.akce[0] : b.akce
+    const da = (aa as { datum: string }).datum
+    const db = (bb as { datum: string }).datum
+    return db.localeCompare(da)
+  })
+
+  return {
+    budouci,
+    historie: historie.slice(0, 100),
+  }
+}
+
+// NOTE: DOKUMENTACNI_STAV_RANK / RANK_TO_DOKUMENTACNI_STAV nejsou re-exportovány
+// z tohoto "use server" modulu (Turbopack constraint — only async server actions
+// in "use server" files). Frontend importuje rovnou z `@/lib/schemas/hodnoceni`.
 
 export async function createBrigadnik(formData: FormData) {
   const supabase = await createClient()
@@ -320,6 +443,71 @@ export async function updateBrigadnikTyp(
   revalidatePath(`/app/brigadnici/${brigadnikId}`)
   revalidatePath("/app/brigadnici")
   return { success: true, transitioned }
+}
+
+/**
+ * F-0016 follow-up: editace citlivých údajů (RČ + číslo dokladu totožnosti).
+ *
+ * Šifrováno per F-0013 Security addendum (AES-256-GCM via `encrypt()`).
+ * Audit **nezapisuje old/new hodnoty** — GDPR/privacy first; jen název pole se objeví
+ * v `historie.metadata.changed_fields`.
+ *
+ * Prázdné / whitespace-only stringy = no-op pro daný field (neumožníme vymazat omylem).
+ * Pro výmaz by měl být dedicated action; deferred.
+ */
+const citliveUdajeSchema = z.object({
+  rodne_cislo: z.string().trim().min(3).max(20).optional(),
+  cislo_op:    z.string().trim().min(3).max(40).optional(),
+})
+
+export async function updateBrigadnikCitliveUdaje(
+  id: string,
+  input: { rodne_cislo?: string; cislo_op?: string },
+) {
+  const parsed = citliveUdajeSchema.safeParse(input)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatné údaje" }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const admin = createAdminClient()
+  const { data: internalUser } = await admin
+    .from("users").select("id").eq("auth_user_id", user.id).single()
+  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+
+  const changedFields: string[] = []
+  const update: Record<string, string> = {}
+
+  if (parsed.data.rodne_cislo) {
+    update.rodne_cislo = encrypt(parsed.data.rodne_cislo)
+    changedFields.push("rodne_cislo")
+  }
+  if (parsed.data.cislo_op) {
+    update.cislo_op = encrypt(parsed.data.cislo_op)
+    changedFields.push("cislo_op")
+  }
+
+  if (changedFields.length === 0) {
+    return { success: true, noop: true }
+  }
+
+  const { error } = await admin.from("brigadnici").update(update).eq("id", id)
+  if (error) return { error: error.message }
+
+  // Audit bez hodnot (PII)
+  await admin.from("historie").insert({
+    brigadnik_id: id,
+    user_id: internalUser.id,
+    typ: "brigadnik_citlive_udaje_change",
+    popis: `Změna citlivých údajů: ${changedFields.join(", ")}`,
+    metadata: { changed_fields: changedFields },
+  })
+
+  revalidatePath(`/app/brigadnici/${id}`)
+  return { success: true }
 }
 
 /**
