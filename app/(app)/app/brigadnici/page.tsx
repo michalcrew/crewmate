@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Plus, Users, CheckCircle2, AlertCircle } from "lucide-react"
+import { Plus, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -10,10 +10,9 @@ import { getBrigadnici } from "@/lib/actions/brigadnici"
 import { BrigadniciSearch } from "@/components/brigadnici/brigadnici-search"
 import { BrigadniciListFilters } from "@/components/brigadnici/brigadnici-list-filters"
 import { FakturantBadge } from "@/components/brigadnici/fakturant-badge"
+import { DokumentacniStavSelect } from "@/components/brigadnici/dokumentacni-stav-select"
 import { StarRating } from "@/components/ui/star-rating"
-import { DPP_STATES } from "@/lib/constants"
 import { PageHeader } from "@/components/shared/page-header"
-import { StatusBadge } from "@/components/shared/status-badge"
 import { EmptyState } from "@/components/shared/empty-state"
 
 export const metadata: Metadata = {
@@ -78,19 +77,16 @@ export default async function BrigadniciPage({
                     <TableHead className="hidden md:table-cell">Email</TableHead>
                     <TableHead className="text-center">Akce</TableHead>
                     <TableHead>Stav</TableHead>
-                    <TableHead>DPP</TableHead>
                     <TableHead className="text-center">Hodnocení</TableHead>
                     <TableHead className="text-right hidden lg:table-cell">Hodiny/rok</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {brigadnici.map((b) => {
-                    const dppCurrentState = DPP_STATES[((b as { dpp_tento_rok?: string }).dpp_tento_rok ?? "zadny") as keyof typeof DPP_STATES]
-                    const hasData = b.dotaznik_vyplnen
-                    const hasDpp = (b as { dpp_tento_rok?: string }).dpp_tento_rok === "podepsano"
-                    const needsAction = !hasData || !hasDpp
                     const rating = Number(b.prumerne_hodnoceni)
                     const hodinyRok = Number((b as { hodiny_rok?: number }).hodiny_rok ?? 0)
+                    const stav = (b as { global_dokumentacni_stav?: string | null }).global_dokumentacni_stav
+                    const needsAction = stav === "nevyplnene_udaje" || stav === "ukoncena_dpp"
 
                     return (
                       <TableRow key={b.id} className={needsAction ? "bg-amber-50/50" : ""}>
@@ -108,28 +104,11 @@ export default async function BrigadniciPage({
                           {(b as { pocet_akci?: number }).pocet_akci ?? 0}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            {hasData ? (
-                              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                            ) : (
-                              <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
-                            )}
-                            <span className="text-xs text-muted-foreground">
-                              {hasData ? "Kompletní" : "Chybí údaje"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge
-                            variant={
-                              dppCurrentState?.label === "Podepsáno" ? "success" :
-                              dppCurrentState?.label === "Odesláno" ? "warning" :
-                              dppCurrentState?.label === "Vygenerováno" ? "info" :
-                              "neutral"
-                            }
-                          >
-                            {dppCurrentState?.label ?? "—"}
-                          </StatusBadge>
+                          <DokumentacniStavSelect
+                            brigadnikId={b.id}
+                            current={stav}
+                            ariaLabel={`${b.prijmeni} ${b.jmeno}`}
+                          />
                         </TableCell>
                         <TableCell className="text-center">
                           <StarRating

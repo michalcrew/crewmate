@@ -446,6 +446,131 @@ export async function updateBrigadnikTyp(
 }
 
 /**
+ * F-0016 follow-up: manuální nastavení dokumentačního stavu (6 hodnot dle
+ * `v_brigadnik_zakazka_status`). Používá se v /app/brigadnici listu,
+ * AssignmentMatrix (nabídky detail) a akce detail — admin/náborářka může
+ * stav přepnout bez procházení plného DPP workflow (papírové podpisy atd.).
+ *
+ * Target-stav mapování na úložiště (rok = current calendar year):
+ *  - osvc              → brigadnici.typ_brigadnika='osvc' (VIEW priorita 1)
+ *  - ukoncena_dpp      → smluvni_stav.dpp_stav='ukoncena' (priorita 2)
+ *  - podepsana_dpp     → dpp_stav='podepsano' + platnost_do=YYYY-12-31 (priorita 3)
+ *  - poslana_dpp       → dpp_stav='odeslano' + dpp_odeslano_at (priorita 4)
+ *  - vyplnene_udaje    → dotaznik_vyplnen=true, smluvni_stav bez dpp (priorita 5)
+ *  - nevyplnene_udaje  → dotaznik_vyplnen=false, smluvni_stav reset (priorita 6)
+ *
+ * Přepnutí z osvc na jiný stav: typ_brigadnika='brigadnik' (osvc_* zůstávají pro historii).
+ *
+ * Audit: 1 řádek `historie` typu `dokumentacni_stav_manual_change` s metadata
+ * { target_stav, previous_stav_computed?, rok }. Žádné PII.
+ */
+export async function setDokumentacniStavManual(
+  brigadnikId: string,
+  stav: "nevyplnene_udaje" | "vyplnene_udaje" | "poslana_dpp" | "podepsana_dpp" | "ukoncena_dpp" | "osvc",
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const admin = createAdminClient()
+  const { data: internalUser } = await admin
+    .from("users").select("id").eq("auth_user_id", user.id).single()
+  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+
+  const rok = new Date().getFullYear()
+
+  // Target 1: OSVČ — jen flip typ_brigadnika, smluvni_stav ponecháme (VIEW dá osvc prioritu 1)
+  if (stav === "osvc") {
+    const { error } = await admin
+      .from("brigadnici")
+      .update({ typ_brigadnika: "osvc" })
+      .eq("id", brigadnikId)
+    if (error) return { error: error.message }
+  } else {
+    // Ostatní stavy: osvc→brigadnik flip pokud je teď osvc
+    const { data: current } = await admin
+      .from("brigadnici")
+      .select("typ_brigadnika, dotaznik_vyplnen")
+      .eq("id", brigadnikId)
+      .single()
+    if (!current) return { error: "Brigádník nenalezen" }
+
+    if (current.typ_brigadnika === "osvc") {
+      await admin.from("brigadnici").update({ typ_brigadnika: "brigadnik" }).eq("id", brigadnikId)
+    }
+
+    // Upravit dotaznik_vyplnen podle cílového stavu
+    if (stav === "nevyplnene_udaje") {
+      if (current.dotaznik_vyplnen !== false) {
+        await admin.from("brigadnici").update({ dotaznik_vyplnen: false }).eq("id", brigadnikId)
+      }
+    } else {
+      // vyplnene_udaje, poslana_dpp, podepsana_dpp, ukoncena_dpp → vyžaduje dotaznik_vyplnen=true
+      if (current.dotaznik_vyplnen !== true) {
+        await admin.from("brigadnici").update({ dotaznik_vyplnen: true }).eq("id", brigadnikId)
+      }
+    }
+
+    // Smluvni_stav úprava
+    const { data: existingSs } = await admin
+      .from("smluvni_stav")
+      .select("id")
+      .eq("brigadnik_id", brigadnikId)
+      .eq("rok", rok)
+      .maybeSingle()
+
+    const now = new Date().toISOString()
+    const dppUpdate: Record<string, unknown> = {}
+
+    if (stav === "nevyplnene_udaje" || stav === "vyplnene_udaje") {
+      // Reset: dpp_stav='zadny', clear timestamps, clear platnost
+      dppUpdate.dpp_stav = "zadny"
+      dppUpdate.dpp_odeslano_at = null
+      dppUpdate.dpp_podepsano_at = null
+      dppUpdate.platnost_do = null
+    } else if (stav === "poslana_dpp") {
+      dppUpdate.dpp_stav = "odeslano"
+      dppUpdate.dpp_odeslano_at = now
+      dppUpdate.dpp_podepsano_at = null
+      dppUpdate.platnost_do = null
+    } else if (stav === "podepsana_dpp") {
+      dppUpdate.dpp_stav = "podepsano"
+      dppUpdate.dpp_podepsano_at = now
+      dppUpdate.platnost_do = `${rok}-12-31`
+    } else if (stav === "ukoncena_dpp") {
+      dppUpdate.dpp_stav = "ukoncena"
+    }
+
+    if (existingSs) {
+      const { error } = await admin
+        .from("smluvni_stav")
+        .update(dppUpdate)
+        .eq("id", existingSs.id)
+      if (error) return { error: error.message }
+    } else {
+      const { error } = await admin
+        .from("smluvni_stav")
+        .insert({ brigadnik_id: brigadnikId, rok, ...dppUpdate })
+      if (error) return { error: error.message }
+    }
+  }
+
+  await admin.from("historie").insert({
+    brigadnik_id: brigadnikId,
+    user_id: internalUser.id,
+    typ: "dokumentacni_stav_manual_change",
+    popis: `Dokumentační stav manuálně nastaven na: ${stav}`,
+    metadata: { target_stav: stav, rok, manual: true },
+  })
+
+  revalidatePath(`/app/brigadnici/${brigadnikId}`)
+  revalidatePath("/app/brigadnici")
+  revalidatePath("/app/nabidky", "layout")
+  revalidatePath("/app/akce", "layout")
+  return { success: true }
+}
+
+/**
  * F-0016 follow-up: editace citlivých údajů (RČ + číslo dokladu totožnosti).
  *
  * Šifrováno per F-0013 Security addendum (AES-256-GCM via `encrypt()`).

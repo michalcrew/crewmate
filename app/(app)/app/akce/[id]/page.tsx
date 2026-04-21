@@ -10,9 +10,11 @@ import {
 } from "@/components/ui/table"
 import { getAkceById, getAkcePrirazeni } from "@/lib/actions/akce"
 import { getBrigadnici } from "@/lib/actions/brigadnici"
+import { createClient } from "@/lib/supabase/server"
 import { AddPrirazeniDialog } from "@/components/akce/add-prirazeni-dialog"
 import { AkceStavSelector } from "@/components/akce/akce-stav-selector"
 import { AkceDetailZrusitButton } from "@/components/akce/akce-detail-zrusit-button"
+import { DokumentacniStavSelect } from "@/components/brigadnici/dokumentacni-stav-select"
 
 export const metadata: Metadata = { title: "Detail akce" }
 
@@ -35,6 +37,43 @@ export default async function AkceDetailPage({
   const availableBrigadnici = (allBrigadnici ?? [])
     .filter(b => !prirazeniIds.has(b.id))
     .map(b => ({ id: b.id, jmeno: b.jmeno, prijmeni: b.prijmeni, telefon: b.telefon }))
+
+  // F-0016 post: dokumentační stav per brigádníka z VIEW (JOIN přes nabidka_id pokud akce má zakázku)
+  const brigadnikIds = [...prirazeniIds].filter(Boolean) as string[]
+  const dokStavMap = new Map<string, string>()
+  if (brigadnikIds.length > 0) {
+    const supabase = await createClient()
+    const nabidkaId = (akce as unknown as { nabidka_id?: string | null }).nabidka_id ?? null
+    if (nabidkaId) {
+      const { data } = await supabase
+        .from("v_brigadnik_zakazka_status")
+        .select("brigadnik_id, dokumentacni_stav")
+        .eq("nabidka_id", nabidkaId)
+        .in("brigadnik_id", brigadnikIds)
+      for (const r of data ?? []) {
+        if (r.brigadnik_id && r.dokumentacni_stav) dokStavMap.set(r.brigadnik_id, r.dokumentacni_stav)
+      }
+    }
+    // Fallback: pro brigádníky bez nabidka_id řádku (ad-hoc akce) se stav počítá z brigadnici + smluvni_stav
+    const missing = brigadnikIds.filter(id => !dokStavMap.has(id))
+    if (missing.length > 0) {
+      const rok = new Date().getFullYear()
+      const [{ data: bros }, { data: smluvy }] = await Promise.all([
+        supabase.from("brigadnici").select("id, typ_brigadnika, dotaznik_vyplnen").in("id", missing),
+        supabase.from("smluvni_stav").select("brigadnik_id, dpp_stav").eq("rok", rok).in("brigadnik_id", missing),
+      ])
+      const smlmap = new Map((smluvy ?? []).map(s => [s.brigadnik_id, s.dpp_stav]))
+      for (const b of bros ?? []) {
+        if (b.typ_brigadnika === "osvc") { dokStavMap.set(b.id, "osvc"); continue }
+        const dpp = smlmap.get(b.id)
+        if (dpp === "ukoncena")       dokStavMap.set(b.id, "ukoncena_dpp")
+        else if (dpp === "podepsano") dokStavMap.set(b.id, "podepsana_dpp")
+        else if (dpp === "odeslano")  dokStavMap.set(b.id, "poslana_dpp")
+        else if (b.dotaznik_vyplnen)  dokStavMap.set(b.id, "vyplnene_udaje")
+        else                          dokStavMap.set(b.id, "nevyplnene_udaje")
+      }
+    }
+  }
 
   const akceStav = (akce.stav ?? "planovana") as "planovana" | "probehla" | "zrusena"
   const isZrusena = akceStav === "zrusena"
@@ -131,6 +170,7 @@ export default async function AkceDetailPage({
                   <TableHead>Brigádník</TableHead>
                   <TableHead>Pozice</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Stav</TableHead>
                   <TableHead>Příchod</TableHead>
                   <TableHead>Odchod</TableHead>
                   <TableHead>Hodin</TableHead>
@@ -141,6 +181,7 @@ export default async function AkceDetailPage({
                 {prirazeni.map((p) => {
                   const b = p.brigadnik as { id: string; jmeno: string; prijmeni: string; telefon: string } | null
                   const d = (p.dochazka as { prichod: string | null; odchod: string | null; hodin_celkem: number | null; hodnoceni: number | null }[])?.[0]
+                  const dokStav = b ? dokStavMap.get(b.id) : undefined
                   return (
                     <TableRow key={p.id}>
                       <TableCell>
@@ -159,6 +200,17 @@ export default async function AkceDetailPage({
                         }>
                           {p.status === "prirazeny" ? "Přiřazený" : p.status === "nahradnik" ? `Náhradník #${p.poradi_nahradnik ?? ""}` : "Vypadl"}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {b ? (
+                          <DokumentacniStavSelect
+                            brigadnikId={b.id}
+                            current={dokStav}
+                            ariaLabel={`${b.prijmeni} ${b.jmeno}`}
+                            compact
+                            disabled={isZrusena}
+                          />
+                        ) : "—"}
                       </TableCell>
                       <TableCell>{d?.prichod?.slice(0, 5) ?? "—"}</TableCell>
                       <TableCell>{d?.odchod?.slice(0, 5) ?? "—"}</TableCell>
