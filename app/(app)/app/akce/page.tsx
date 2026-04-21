@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Plus, Calendar as CalendarIcon, Info } from "lucide-react"
+import { Plus, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -8,36 +8,49 @@ import {
 } from "@/components/ui/table"
 import { getAkce, getAkceCounts } from "@/lib/actions/akce"
 import { PageHeader } from "@/components/shared/page-header"
-import { StatusBadge } from "@/components/shared/status-badge"
 import { EmptyState } from "@/components/shared/empty-state"
 import { AkceTabs } from "@/components/akce/akce-tabs"
 import { AkceRowActions } from "@/components/akce/akce-row-actions"
+import { AkceStavSelector } from "@/components/akce/akce-stav-selector"
 
 export const metadata: Metadata = { title: "Akce" }
 
 type TabValue = "planovana" | "probehla" | "zrusena" | "all"
 const VALID_STAVS: TabValue[] = ["planovana", "probehla", "zrusena", "all"]
+const PAGE_SIZE = 30
 
 function normalizeStav(raw?: string): TabValue {
   if (raw && (VALID_STAVS as string[]).includes(raw)) return raw as TabValue
   return "planovana"
 }
 
+function normalizePage(raw?: string): number {
+  const n = raw ? parseInt(raw, 10) : 1
+  if (!Number.isFinite(n) || n < 1) return 1
+  return n
+}
+
 export default async function AkcePage({
   searchParams,
 }: {
-  searchParams?: Promise<{ stav?: string }>
+  searchParams?: Promise<{ stav?: string; page?: string }>
 }) {
   const sp = (await searchParams) ?? {}
   const stav = normalizeStav(sp.stav)
+  const page = normalizePage(sp.page)
+  const offset = (page - 1) * PAGE_SIZE
 
   // getAkce() internally fires autoUkoncitProbeleAkceBatch() (rate-limited).
   const [{ data: akce, totalCount }, counts] = await Promise.all([
-    getAkce({ stav }),
+    getAkce({ stav, offset, limit: PAGE_SIZE }),
     getAkceCounts(),
   ])
 
-  const limitReached = akce.length >= 500 && totalCount > 500
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
+  const hasPrev = page > 1
+  const hasNext = offset + akce.length < totalCount
+  const showingFrom = totalCount === 0 ? 0 : offset + 1
+  const showingTo = offset + akce.length
 
   const emptyConfig: Record<TabValue, { title: string; description: string; showCta: boolean }> = {
     planovana: {
@@ -66,7 +79,11 @@ export default async function AkcePage({
     <div className="space-y-5">
       <PageHeader
         title="Akce"
-        description={totalCount > 0 ? `Zobrazuji ${akce.length} z ${totalCount} akcí` : undefined}
+        description={
+          totalCount > 0
+            ? `Zobrazuji ${showingFrom}–${showingTo} z ${totalCount} akcí`
+            : undefined
+        }
         actions={
           <Link href="/app/akce/nova">
             <Button><Plus className="h-4 w-4 mr-1.5" />Nová akce</Button>
@@ -75,16 +92,6 @@ export default async function AkcePage({
       />
 
       <AkceTabs active={stav} counts={counts} />
-
-      {limitReached && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          <Info className="h-4 w-4 mt-0.5 shrink-0" />
-          <p>
-            Zobrazeno prvních 500 akcí z {totalCount}. Pro starší historii použijte měsíční filter
-            (připravuje se ve F-0018) nebo detail zakázky.
-          </p>
-        </div>
-      )}
 
       <Card className="shadow-sm overflow-hidden">
         <CardContent className="p-0">
@@ -150,12 +157,13 @@ export default async function AkcePage({
                           )}
                         </TableCell>
                         <TableCell>
-                          <StatusBadge
-                            variant={a.stav === "planovana" ? "info" : a.stav === "probehla" ? "success" : "danger"}
-                            dot
-                          >
-                            {a.stav === "planovana" ? "Plánovaná" : a.stav === "probehla" ? "Proběhla" : "Zrušená"}
-                          </StatusBadge>
+                          <AkceStavSelector
+                            akceId={a.id}
+                            akceName={a.nazev}
+                            akceDate={a.datum}
+                            currentStav={a.stav ?? "planovana"}
+                            size="sm"
+                          />
                         </TableCell>
                         <TableCell className="text-center">
                           <AkceRowActions
@@ -174,6 +182,43 @@ export default async function AkcePage({
           )}
         </CardContent>
       </Card>
+
+      {/* Pagination controls — zobrazit jen pokud je víc než jedna stránka */}
+      {totalCount > PAGE_SIZE && (
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <div className="text-muted-foreground">
+            Strana {page} / {totalPages}
+          </div>
+          <div className="flex items-center gap-2">
+            {hasPrev ? (
+              <Link href={`/app/akce?stav=${stav}&page=${page - 1}`}>
+                <Button variant="outline" size="sm">
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Předchozí
+                </Button>
+              </Link>
+            ) : (
+              <Button variant="outline" size="sm" disabled>
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Předchozí
+              </Button>
+            )}
+            {hasNext ? (
+              <Link href={`/app/akce?stav=${stav}&page=${page + 1}`}>
+                <Button variant="outline" size="sm">
+                  Další
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </Link>
+            ) : (
+              <Button variant="outline" size="sm" disabled>
+                Další
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
