@@ -6,6 +6,22 @@ export const sendEmailSchema = z.object({
   body_html: z.string().min(1, "Text emailu je povinný").max(100000),
   attachment_ids: z.array(z.string().uuid()).optional(),
   document_type: z.enum(["dpp", "prohlaseni", "briefing", "plain"]).optional(),
+  // F-0014 additions (ADR-1A, ADR-1B): reply threading + reply-all + attachments
+  thread_id: z.string().uuid().optional(),
+  cc: z.array(z.string().email("Neplatná adresa v CC")).optional(),
+  // F-0014 1B — storage paths z phase A (uploadEmailAttachmentPending)
+  attachment_draft_ids: z
+    .array(z.string().regex(/^pending\//, "Neplatná cesta přílohy"))
+    .optional(),
+})
+
+export const replyThreadSchema = z.object({
+  thread_id: z.string().uuid(),
+  body_html: z.string().min(1, "Text odpovědi je povinný").max(100000),
+  reply_all: z.boolean().optional(),
+  attachment_draft_ids: z
+    .array(z.string().regex(/^pending\//, "Neplatná cesta přílohy"))
+    .optional(),
 })
 
 export const sendDocumentSchema = z.object({

@@ -8,6 +8,7 @@ interface GmailAttachment {
 
 interface SendGmailParams {
   to: string
+  cc?: string[]                   // F-0014 ADR-1A: reply-all support
   subject: string
   bodyHtml: string
   attachments?: GmailAttachment[]
@@ -25,6 +26,7 @@ interface SendGmailResult {
 function buildMimeMessage(params: {
   from: string
   to: string
+  cc?: string[]
   subject: string
   bodyHtml: string
   attachments?: GmailAttachment[]
@@ -35,9 +37,14 @@ function buildMimeMessage(params: {
   const headers = [
     `From: ${params.from}`,
     `To: ${params.to}`,
+  ]
+  if (params.cc && params.cc.length > 0) {
+    headers.push(`Cc: ${params.cc.join(", ")}`)
+  }
+  headers.push(
     `Subject: =?UTF-8?B?${Buffer.from(params.subject).toString("base64")}?=`,
     `MIME-Version: 1.0`,
-  ]
+  )
 
   if (hasAttachments) {
     headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`)
@@ -82,6 +89,7 @@ export async function sendGmailMessage(params: SendGmailParams): Promise<SendGma
   const raw = buildMimeMessage({
     from: `Crewmate <${fromEmail}>`,
     to: params.to,
+    cc: params.cc,
     subject: params.subject,
     bodyHtml: params.bodyHtml,
     attachments: params.attachments,

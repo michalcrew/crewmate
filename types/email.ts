@@ -28,6 +28,9 @@ export interface EmailThread {
   message_count: number
   created_at: string
   updated_at: string
+  // F-0014 1F — inbox state (optional dokud Backend nepřidá sloupce)
+  is_read?: boolean
+  archived?: boolean
   // Joined
   brigadnik?: {
     id: string

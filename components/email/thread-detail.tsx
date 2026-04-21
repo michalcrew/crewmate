@@ -1,13 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import Link from "next/link"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Reply, ReplyAll } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ConversationStatusBadge } from "./conversation-status-badge"
 import { EmailComposer } from "./email-composer"
-import type { EmailThread, EmailMessage, ConversationStatus } from "@/types/email"
+import { SafeHtml } from "./safe-html"
 import { updateConversationStatus } from "@/lib/actions/email"
+import type { EmailThread, EmailMessage, ConversationStatus } from "@/types/email"
 import { cn } from "@/lib/utils"
 
 function MessageBubble({ message }: { message: EmailMessage }) {
@@ -37,13 +37,16 @@ function MessageBubble({ message }: { message: EmailMessage }) {
           </span>
         </div>
 
-        {/* Body */}
-        <div
+        {/* F-0014 P0-2 (Security MUST #1): Inbound HTML render přes SafeHtml
+            wrapper (allowlist sanitize-html). RAW dangerouslySetInnerHTML by
+            umožnilo XSS (<script>, on* handlery, javascript: URL) na inbound
+            zprávách od brigádníků / externích odesilatelů. */}
+        <SafeHtml
           className="text-sm prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: message.body_html || message.body_text }}
+          html={message.body_html}
+          fallbackText={message.body_text}
         />
 
-        {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-3 flex flex-col gap-1">
             {message.attachments.map((att) => (
@@ -70,6 +73,8 @@ function MessageBubble({ message }: { message: EmailMessage }) {
   )
 }
 
+type ReplyMode = "reply" | "reply-all"
+
 export function ThreadDetail({
   thread,
   messages,
@@ -78,18 +83,41 @@ export function ThreadDetail({
   messages: EmailMessage[]
 }) {
   const [status, setStatus] = useState<ConversationStatus>(thread.status)
+  const [replyMode, setReplyMode] = useState<ReplyMode>("reply")
 
   async function handleStatusChange(newStatus: ConversationStatus) {
     setStatus(newStatus)
     await updateConversationStatus({ thread_id: thread.id, status: newStatus })
   }
 
+  /**
+   * F-0014 1A-2: zjistit, zda má smysl "Odpovědět všem".
+   * Server-side replyToThread spočítá přesné recipients; zde jen hrubá heuristika
+   * pro disable state — pokud poslední inbound má non-empty cc_emails nebo to
+   * seznam délky > 1, je komu CC.
+   */
+  const hasAnyoneToCc = useMemo(() => {
+    const lastInbound = [...messages]
+      .reverse()
+      .find((m) => m.direction === "inbound")
+    if (!lastInbound) return false
+    const ccEmails = (lastInbound as unknown as { cc_emails?: string[] }).cc_emails
+    if (Array.isArray(ccEmails) && ccEmails.some((e) => !!e && !/@crewmate\.cz$/i.test(e))) {
+      return true
+    }
+    const to = lastInbound.to_email
+    if (typeof to === "string" && to.includes(",")) return true
+    return false
+  }, [messages])
+
+  const canReply = !!thread.brigadnik?.email
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-3 p-4 border-b">
         <Link href="/app/emaily">
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" aria-label="Zpět">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
@@ -108,6 +136,7 @@ export function ThreadDetail({
               value={status}
               onChange={(e) => handleStatusChange(e.target.value as ConversationStatus)}
               className="text-xs border rounded px-2 py-1"
+              aria-label="Stav konverzace"
             >
               <option value="nove">Nové</option>
               <option value="ceka_na_brigadnika">Čeká na brigádníka</option>
@@ -125,15 +154,45 @@ export function ThreadDetail({
         ))}
       </div>
 
-      {/* Reply composer */}
-      {thread.brigadnik && (
-        <EmailComposer
-          brigadnikId={thread.brigadnik.id}
-          brigadnikEmail={thread.brigadnik.email}
-          defaultSubject={`Re: ${thread.subject}`}
-          threadId={thread.id}
-          compact
-        />
+      {/* Reply action row + composer */}
+      {canReply ? (
+        <div className="border-t">
+          <div className="flex items-center gap-2 px-4 pt-3">
+            <Button
+              size="sm"
+              variant={replyMode === "reply" ? "default" : "outline"}
+              onClick={() => setReplyMode("reply")}
+              aria-pressed={replyMode === "reply"}
+            >
+              <Reply className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+              Odpovědět
+            </Button>
+            <Button
+              size="sm"
+              variant={replyMode === "reply-all" ? "default" : "outline"}
+              onClick={() => setReplyMode("reply-all")}
+              disabled={!hasAnyoneToCc}
+              title={!hasAnyoneToCc ? "Není komu poslat všem" : undefined}
+              aria-pressed={replyMode === "reply-all"}
+            >
+              <ReplyAll className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+              Odpovědět všem
+            </Button>
+          </div>
+          <EmailComposer
+            key={replyMode}
+            brigadnikId={thread.brigadnik!.id}
+            brigadnikEmail={thread.brigadnik!.email}
+            defaultSubject={`Re: ${thread.subject}`}
+            threadId={thread.id}
+            replyAll={replyMode === "reply-all"}
+            compact
+          />
+        </div>
+      ) : (
+        <div className="border-t p-4 text-sm text-muted-foreground">
+          Thread není přiřazen k brigádníkovi — použijte „Nový email".
+        </div>
       )}
     </div>
   )

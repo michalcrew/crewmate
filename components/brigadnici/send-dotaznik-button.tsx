@@ -1,29 +1,22 @@
 "use client"
 
-import { useTransition } from "react"
-import { Button } from "@/components/ui/button"
-import { Mail } from "lucide-react"
-import { sendDotaznikEmail } from "@/lib/actions/formular"
-import { toast } from "sonner"
+/**
+ * F-0014 1E — thin wrapper over SendDotaznikDialog for backward compat.
+ * Old callers passed only `brigadnikId`; the dialog handles warning flow.
+ */
+import { SendDotaznikDialog } from "./send-dotaznik-dialog"
 
-export function SendDotaznikButton({ brigadnikId }: { brigadnikId: string }) {
-  const [isPending, startTransition] = useTransition()
-
-  function handleClick() {
-    startTransition(async () => {
-      const result = await sendDotaznikEmail(brigadnikId)
-      if (result.error) {
-        toast.error(result.error)
-      } else {
-        toast.success("Dotazník odeslán!")
-      }
-    })
-  }
-
+export function SendDotaznikButton({
+  brigadnikId,
+  brigadnikEmail,
+}: {
+  brigadnikId: string
+  brigadnikEmail?: string | null
+}) {
   return (
-    <Button onClick={handleClick} disabled={isPending} variant="outline" size="sm">
-      <Mail className="h-4 w-4 mr-2" />
-      {isPending ? "Odesílám..." : "Odeslat dotazník"}
-    </Button>
+    <SendDotaznikDialog
+      brigadnikId={brigadnikId}
+      brigadnikEmail={brigadnikEmail}
+    />
   )
 }

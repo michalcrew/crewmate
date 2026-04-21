@@ -547,3 +547,33 @@ export async function getBrigadnikHistorie(brigadnikId: string) {
   if (error) return []
   return data
 }
+
+/**
+ * F-0014 1D — filtered timeline jen pro komunikační eventy.
+ * Typ IN: email_odeslan, email_prijaty, dotaznik_odeslan, dpp_odeslan, prohlaseni_odeslan.
+ * Řazeno DESC dle created_at.
+ */
+const KOMUNIKACE_HISTORIE_TYPES = [
+  "email_odeslan",
+  "email_prijaty",
+  "dotaznik_odeslan",
+  "dpp_odeslan",
+  "prohlaseni_odeslan",
+] as const
+
+export async function getBrigadnikKomunikaceHistorie(
+  brigadnikId: string,
+  limit: number = 50
+) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("historie")
+    .select("*")
+    .eq("brigadnik_id", brigadnikId)
+    .in("typ", KOMUNIKACE_HISTORIE_TYPES as unknown as string[])
+    .order("created_at", { ascending: false })
+    .limit(limit)
+
+  if (error) return []
+  return data
+}

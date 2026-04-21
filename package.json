@@ -21,6 +21,7 @@
     "clsx": "^2.1.1",
     "docxtemplater": "^3.68.5",
     "exceljs": "^4.4.0",
+    "file-type": "^22.0.1",
     "google-auth-library": "^10.6.2",
     "googleapis": "^171.4.0",
     "lucide-react": "^1.8.0",
