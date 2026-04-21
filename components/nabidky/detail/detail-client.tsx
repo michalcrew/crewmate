@@ -90,7 +90,12 @@ export function NabidkaDetailClient({
 }) {
   return (
     <div className="space-y-8">
-      <PipelineSection pipeline={pipeline} nabidkaId={nabidkaId} readOnly={readOnly} />
+      <PipelineSection
+        pipeline={pipeline}
+        nabidkaId={nabidkaId}
+        readOnly={readOnly}
+        dokumentacniMap={dokumentacniMap ?? {}}
+      />
       <AssignmentMatrix
         pipeline={pipeline}
         akce={akce}
@@ -108,10 +113,12 @@ function PipelineSection({
   pipeline,
   nabidkaId,
   readOnly,
+  dokumentacniMap,
 }: {
   pipeline: PipelineEntry[]
   nabidkaId: string
   readOnly: boolean
+  dokumentacniMap: Record<string, string>
 }) {
   const [activeEntry, setActiveEntry] = useState<PipelineEntry | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -179,12 +186,19 @@ function PipelineSection({
               config={config}
               entries={pipelineByStav[stav] ?? []}
               readOnly={readOnly}
+              dokumentacniMap={dokumentacniMap}
             />
           ))}
         </div>
       </section>
       <DragOverlay>
-        {activeEntry && <BrigadnikCardInner entry={activeEntry} isDragging />}
+        {activeEntry && (
+          <BrigadnikCardInner
+            entry={activeEntry}
+            isDragging
+            dokumentacniStav={dokumentacniMap[activeEntry.brigadnik?.id ?? ""]}
+          />
+        )}
       </DragOverlay>
     </DndContext>
   )
@@ -195,11 +209,13 @@ function PipelineColumn({
   config,
   entries,
   readOnly,
+  dokumentacniMap,
 }: {
   stav: string
   config: { label: string; color: string }
   entries: PipelineEntry[]
   readOnly: boolean
+  dokumentacniMap: Record<string, string>
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: `col:${stav}`, disabled: readOnly })
 
@@ -216,7 +232,12 @@ function PipelineColumn({
       </div>
       <div className="space-y-2">
         {entries.map(entry => (
-          <DraggableBrigadnikCard key={entry.id} entry={entry} readOnly={readOnly} />
+          <DraggableBrigadnikCard
+            key={entry.id}
+            entry={entry}
+            readOnly={readOnly}
+            dokumentacniStav={dokumentacniMap[entry.brigadnik?.id ?? ""]}
+          />
         ))}
         {entries.length === 0 && (
           <div className="border border-dashed rounded-lg p-3 text-center text-xs text-muted-foreground">
@@ -228,7 +249,15 @@ function PipelineColumn({
   )
 }
 
-function DraggableBrigadnikCard({ entry, readOnly }: { entry: PipelineEntry; readOnly: boolean }) {
+function DraggableBrigadnikCard({
+  entry,
+  readOnly,
+  dokumentacniStav,
+}: {
+  entry: PipelineEntry
+  readOnly: boolean
+  dokumentacniStav?: string
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `brig:${entry.id}`,
     disabled: readOnly,
@@ -246,12 +275,20 @@ function DraggableBrigadnikCard({ entry, readOnly }: { entry: PipelineEntry; rea
       {...attributes}
       className={`${readOnly ? "" : "cursor-grab active:cursor-grabbing"} ${isDragging ? "opacity-30" : ""}`}
     >
-      <BrigadnikCardInner entry={entry} />
+      <BrigadnikCardInner entry={entry} dokumentacniStav={dokumentacniStav} />
     </div>
   )
 }
 
-function BrigadnikCardInner({ entry, isDragging }: { entry: PipelineEntry; isDragging?: boolean }) {
+function BrigadnikCardInner({
+  entry,
+  isDragging,
+  dokumentacniStav,
+}: {
+  entry: PipelineEntry
+  isDragging?: boolean
+  dokumentacniStav?: string
+}) {
   const b = entry.brigadnik
   if (!b) return null
 
@@ -275,6 +312,12 @@ function BrigadnikCardInner({ entry, isDragging }: { entry: PipelineEntry; isDra
           </Link>
           <p className="text-xs text-muted-foreground">{b.telefon}</p>
         </div>
+        {/* F-0015 enh — dokumentační status badge v Pipeline kartě (stejný pattern jako matrix). */}
+        {dokumentacniStav && (
+          <div>
+            <DokumentacniStavBadge stav={dokumentacniStav} />
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-1">
           {b.dotaznik_vyplnen ? (
             <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">

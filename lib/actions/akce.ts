@@ -2,7 +2,20 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { z } from "zod"
+
+// F-0015 HF — RLS lookup helper (pattern z F-0013 HF4c updateUserPodpis).
+// Auth check je pre-condition; DB lookup přes admin client (RLS fallback).
+async function resolveInternalUserId(authUserId: string): Promise<string | null> {
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from("users")
+    .select("id")
+    .eq("auth_user_id", authUserId)
+    .single()
+  return (data as { id: string } | null)?.id ?? null
+}
 
 const akceSchema = z.object({
   nazev: z.string().min(1, "Název je povinný"),
@@ -83,7 +96,7 @@ export async function getAkce(filter?: {
   // Enum validation — fallback na 'planovana' pro invalid input (URL manipulation safety)
   const parsedStav = filter?.stav ? stavFilterEnum.safeParse(filter.stav) : null
   const stav = parsedStav?.success ? parsedStav.data : "planovana"
-  const limit = Math.min(Math.max(filter?.limit ?? 500, 1), 1000)
+  const limit = Math.min(Math.max(filter?.limit ?? 30, 1), 1000)
   const offset = Math.max(filter?.offset ?? 0, 0)
 
   let query = supabase
@@ -527,10 +540,9 @@ export async function zrusitAkci(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  // Internal user id pro audit
-  const { data: internalUser } = await supabase
-    .from("users").select("id").eq("auth_user_id", user.id).single()
-  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+  // Internal user id pro audit (RLS fallback viz resolveInternalUserId)
+  const internalUserId = await resolveInternalUserId(user.id)
+  if (!internalUserId) return { error: "Interní uživatel nenalezen" }
 
   // Načti nabidka_id pro revalidatePath
   const { data: akceBefore } = await supabase
@@ -539,7 +551,7 @@ export async function zrusitAkci(
   const { data, error } = await supabase.rpc("fn_zrusit_akci", {
     p_akce_id: akceId,
     p_duvod: duvod ?? null,
-    p_user_id: internalUser.id,
+    p_user_id: internalUserId,
   })
 
   if (error) {
@@ -583,9 +595,8 @@ export async function updateAkceStav(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  const { data: internalUser } = await supabase
-    .from("users").select("id").eq("auth_user_id", user.id).single()
-  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+  const internalUserId = await resolveInternalUserId(user.id)
+  if (!internalUserId) return { error: "Interní uživatel nenalezen" }
 
   const { data: current } = await supabase
     .from("akce").select("id, nazev, stav, nabidka_id").eq("id", akceId).single()
@@ -638,7 +649,7 @@ export async function updateAkceStav(
   await supabase.from("historie").insert({
     akce_id: akceId,
     nabidka_id: current.nabidka_id,
-    user_id: internalUser.id,
+    user_id: internalUserId,
     typ,
     popis,
     metadata: { old_stav: current.stav, new_stav: parsedStav.data, duvod: duvod ?? null },
