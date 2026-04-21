@@ -54,7 +54,10 @@ export async function sendEmailAction(input: unknown): Promise<SendEmailResult> 
   if (!brigadnik.email) return { success: false, error: "Brigádník nemá vyplněný email" }
 
   // Get current user info for signature
-  const { data: currentUser } = await supabase
+  // HF: authenticated SELECT občas vrací prázdno (RLS edge case, stejný
+  // pattern jako F-0013 HF4c + F-0015 HF). Admin client fallback po auth check.
+  const admin = createAdminClient()
+  const { data: currentUser } = await admin
     .from("users")
     .select("id, jmeno, prijmeni, role, podpis, pridat_logo")
     .eq("auth_user_id", user.id)
@@ -264,23 +267,15 @@ export async function replyToThread(
   }
 
   // Current user email (pro reply-all exclusion) + internal users row pro signature
-  // Pattern z F-0013 HF4c: admin client fallback pro users lookup
+  // HF: admin client přímo (authenticated SELECT občas vrací data ale bez
+  // všech sloupců / unexpected null). Pattern z F-0013 HF4c + F-0015 HF.
   let userEmail = user.email ?? ""
-  const { data: currentUser } = await supabase
+  const admin = createAdminClient()
+  const { data: internalUser } = await admin
     .from("users")
     .select("id, jmeno, prijmeni, role, podpis, pridat_logo, email")
     .eq("auth_user_id", user.id)
     .single()
-  let internalUser = currentUser
-  if (!internalUser) {
-    const admin = createAdminClient()
-    const { data: adminUser } = await admin
-      .from("users")
-      .select("id, jmeno, prijmeni, role, podpis, pridat_logo, email")
-      .eq("auth_user_id", user.id)
-      .single()
-    internalUser = adminUser
-  }
   if (internalUser && typeof (internalUser as { email?: string }).email === "string") {
     userEmail = (internalUser as { email?: string }).email || userEmail
   }
