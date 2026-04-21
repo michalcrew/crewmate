@@ -94,6 +94,10 @@ export default async function AkceDetailPage({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* F-0018: odkaz na admin dochazka grid */}
+          <Link href={`/app/akce/${id}/dochazka`}>
+            <Button variant="outline" size="sm">Docházka</Button>
+          </Link>
           {/* Inline stav selector (F-0015 US-1E-1) */}
           <AkceStavSelector
             akceId={id}
