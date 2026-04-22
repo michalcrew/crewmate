@@ -38,6 +38,8 @@ export async function getBrigadnici(filter?: {
    *  Aplikuje se AND s ostatními filtry. Sdílí predicate s `getDashboardAlerts`
    *  (alert count ↔ filtrovaný list count musí match). */
   filterKey?: AlertFilterKey
+  /** F-0021a: true = zobrazit i blokované brigádníky. Default false = skryto. */
+  zahrnoutBlokovane?: boolean
 }) {
   const supabase = await createClient()
   let query = supabase
@@ -52,6 +54,12 @@ export async function getBrigadnici(filter?: {
   // F-0016 D-F0016-06: soft-deleted výchozí skryto. VIEW už filtruje
   // deleted_at IS NULL, ale explicit pojistka (kdyby se volalo přes admin).
   // Žádný navíc where clause — view se o to stará.
+
+  // F-0021a: blokovaní brigádníci skryti v default listu. Admin je může
+  // zobrazit přes URL query param ?blokovani=1 (UI toggle v filters).
+  if (!filter?.zahrnoutBlokovane) {
+    query = query.is("zablokovan_at", null)
+  }
 
   if (filter?.typFilter && filter.typFilter !== "all") {
     query = query.eq("typ_brigadnika", filter.typFilter)
@@ -920,4 +928,100 @@ export async function getBrigadnikKomunikaceHistorie(
 
   if (error) return []
   return data
+}
+
+// ============================================================
+// F-0021a — Manuální blokace brigádníka (LG-5 z auditu)
+// ============================================================
+// Admin/náborář může ručně zablokovat problematického brigádníka.
+// Po blokaci se neobjevuje v default listech/matrix. Unblock kdykoli.
+// Schema: brigadnici.zablokovan_at / zablokovan_duvod / zablokoval_user_id
+// (F-0021a migrace applied 2026-04-27).
+//
+// NENÍ auto-block na základě ratingu — vždy manuální rozhodnutí.
+// ============================================================
+
+const blokovatSchema = z.object({
+  id: z.string().uuid(),
+  duvod: z.string().trim().max(500).optional(),
+})
+
+export async function blokovatBrigadnika(
+  id: string,
+  duvod?: string,
+): Promise<{ success: true } | { error: string }> {
+  const parsed = blokovatSchema.safeParse({ id, duvod })
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Neplatné údaje" }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const admin = createAdminClient()
+  const { data: internalUser } = await admin
+    .from("users").select("id").eq("auth_user_id", user.id).single()
+  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+
+  const { error } = await admin
+    .from("brigadnici")
+    .update({
+      zablokovan_at: new Date().toISOString(),
+      zablokovan_duvod: parsed.data.duvod ?? null,
+      zablokoval_user_id: (internalUser as { id: string }).id,
+    })
+    .eq("id", id)
+
+  if (error) return { error: sanitizeError(error, "blokovatBrigadnika") }
+
+  await admin.from("historie").insert({
+    brigadnik_id: id,
+    user_id: (internalUser as { id: string }).id,
+    typ: "brigadnik_zablokovan",
+    popis: parsed.data.duvod
+      ? `Brigádník zablokován: ${parsed.data.duvod.slice(0, 200)}`
+      : "Brigádník zablokován (bez důvodu)",
+    metadata: { duvod: parsed.data.duvod ?? null },
+  })
+
+  revalidatePath(`/app/brigadnici/${id}`)
+  revalidatePath("/app/brigadnici")
+  return { success: true }
+}
+
+export async function odblokovatBrigadnika(
+  id: string,
+): Promise<{ success: true } | { error: string }> {
+  if (!id) return { error: "Chybí ID" }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const admin = createAdminClient()
+  const { data: internalUser } = await admin
+    .from("users").select("id").eq("auth_user_id", user.id).single()
+  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+
+  const { error } = await admin
+    .from("brigadnici")
+    .update({
+      zablokovan_at: null,
+      zablokovan_duvod: null,
+      zablokoval_user_id: null,
+    })
+    .eq("id", id)
+
+  if (error) return { error: sanitizeError(error, "odblokovatBrigadnika") }
+
+  await admin.from("historie").insert({
+    brigadnik_id: id,
+    user_id: (internalUser as { id: string }).id,
+    typ: "brigadnik_odblokovan",
+    popis: "Brigádník odblokován",
+    metadata: {},
+  })
+
+  revalidatePath(`/app/brigadnici/${id}`)
+  revalidatePath("/app/brigadnici")
+  return { success: true }
 }

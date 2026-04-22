@@ -31,6 +31,7 @@ import { PIPELINE_STATES, DPP_STATES } from "@/lib/constants"
 import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button"
 import { GenerateDppButton, GenerateProhlaseniButton, SendDppButton, UploadPodpisForm } from "@/components/brigadnici/dpp-actions"
 import { UpravitBrigadnikaDialog } from "@/components/brigadnici/upravit-brigadnika-dialog"
+import { BlokaceActions, BlokovanBadge } from "@/components/brigadnici/blokace-actions"
 import { BrigadnikAkceSekce } from "@/components/brigadnici/brigadnik-akce-sekce"
 import { HodnoceniList, type HodnoceniItem } from "@/components/brigadnici/hodnoceni-list"
 import { PridatHodnoceniDialog } from "@/components/brigadnici/pridat-hodnoceni-dialog"
@@ -112,6 +113,9 @@ export default async function BrigadnikDetailPage({
               {brigadnik.jmeno} {brigadnik.prijmeni}
             </h1>
             <FakturantBadge typ={brigadnik.typ_brigadnika} variant="header" />
+            {brigadnik.zablokovan_at && (
+              <BlokovanBadge zablokovanDuvod={brigadnik.zablokovan_duvod ?? null} />
+            )}
           </div>
           <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
             <span>{brigadnik.email}</span>
@@ -132,6 +136,11 @@ export default async function BrigadnikDetailPage({
               rodne_cislo_vyplneno: Boolean(brigadnik.rodne_cislo),
               cislo_op_vyplneno: Boolean(brigadnik.cislo_op),
             }}
+          />
+          <BlokaceActions
+            brigadnikId={brigadnik.id}
+            zablokovanAt={brigadnik.zablokovan_at ?? null}
+            zablokovanDuvod={brigadnik.zablokovan_duvod ?? null}
           />
           {!brigadnik.dotaznik_vyplnen && (
             <SendDotaznikButton brigadnikId={brigadnik.id} brigadnikEmail={brigadnik.email} />

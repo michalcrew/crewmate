@@ -39,6 +39,7 @@ export function BrigadniciListFilters() {
   const typ = params.get("typ") ?? "all"
   const stavRaw = params.get("stav") ?? ""
   const selectedStavs = stavRaw ? stavRaw.split(",").filter(Boolean) : []
+  const zahrnoutBlokovane = params.get("blokovani") === "1"
 
   function buildUrl(mutate: (p: URLSearchParams) => void) {
     const next = new URLSearchParams(params.toString())
@@ -72,18 +73,30 @@ export function BrigadniciListFilters() {
     })
   }
 
+  function toggleBlokovane() {
+    startTransition(() => {
+      router.push(
+        buildUrl((p) => {
+          if (zahrnoutBlokovane) p.delete("blokovani")
+          else p.set("blokovani", "1")
+        })
+      )
+    })
+  }
+
   function clearAll() {
     startTransition(() => {
       router.push(
         buildUrl((p) => {
           p.delete("typ")
           p.delete("stav")
+          p.delete("blokovani")
         })
       )
     })
   }
 
-  const hasFilters = typ !== "all" || selectedStavs.length > 0
+  const hasFilters = typ !== "all" || selectedStavs.length > 0 || zahrnoutBlokovane
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -145,6 +158,19 @@ export function BrigadniciListFilters() {
           </div>
         )}
       </div>
+
+      {/* F-0021a — toggle blokovaných */}
+      <Button
+        type="button"
+        variant={zahrnoutBlokovane ? "default" : "outline"}
+        size="sm"
+        onClick={toggleBlokovane}
+        disabled={pending}
+        className="h-8 text-xs"
+        title="Výchozí: blokovaní brigádníci jsou skryti"
+      >
+        {zahrnoutBlokovane ? "Zobrazuji i blokované" : "Skrýt blokované"}
+      </Button>
 
       {hasFilters && (
         <Button
