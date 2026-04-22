@@ -66,24 +66,34 @@ export function PridatHodinyDialog({ datum, aktivniNabidky, onSuccess, trigger, 
     return parseMinutes(r.trvani)
   }
 
-  function isRowComplete(r: RowState): boolean {
+  // Pro submit filter — musí mít zakázku (nebo Ostatní) i platné trvání.
+  function isRowSubmittable(r: RowState): boolean {
     const min = rowMinutes(r)
     if (min === null || min <= 0) return false
     if (r.typ === "nabidka") return !!r.nabidka_id
     return true
   }
 
-  // Progressive disclosure: pokud je poslední řádek kompletní, připojíme prázdný.
+  // Pro progressive disclosure — stačí jakýkoliv meaningful input.
+  // Tj. vybraná zakázka NEBO platné trvání NEBO explicit Ostatní+trvání.
+  function hasAnyInput(r: RowState): boolean {
+    if (r.typ === "nabidka" && r.nabidka_id) return true
+    const min = rowMinutes(r)
+    if (min !== null && min > 0) return true
+    return false
+  }
+
+  // Progressive disclosure: pokud poslední řádek má *jakýkoliv* input, připojíme prázdný.
   useEffect(() => {
     if (rows.length === 0) return
     const last = rows[rows.length - 1]
-    if (last && isRowComplete(last)) {
+    if (last && hasAnyInput(last)) {
       setRows(prev => [...prev, emptyRow()])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows])
 
-  const filledRows = rows.filter(isRowComplete)
+  const filledRows = rows.filter(isRowSubmittable)
   const totalMinut = filledRows.reduce((a, r) => a + (rowMinutes(r) ?? 0), 0)
 
   useEffect(() => {
@@ -165,7 +175,7 @@ export function PridatHodinyDialog({ datum, aktivniNabidky, onSuccess, trigger, 
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Zapsat odpracované hodiny</DialogTitle>
         </DialogHeader>
@@ -227,12 +237,12 @@ export function PridatHodinyDialog({ datum, aktivniNabidky, onSuccess, trigger, 
               id="ph-napln"
               value={naplnPrace}
               onChange={(e) => setNaplnPrace(e.target.value)}
-              placeholder="Popiš co jsi dělala — platí pro všechny záznamy výše"
+              placeholder="např. Rozdělila jsem 5 brigádníků na květen na šatny, urgovala DPP pro PTK Ostrava, volala zájemce na Colours."
               rows={3}
               required
             />
             <p className="text-xs text-muted-foreground">
-              Jeden popis pro všechny záznamy (volání uchazečům, příprava DPP, briefing…).
+              Jeden popis pro všechny záznamy výše — klidně konkrétní činnosti napříč zakázkami.
             </p>
           </div>
 
@@ -326,63 +336,68 @@ function RowEditor({
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
-        <div>
-          {row.typ === "nabidka" ? (
-            selectedNabidka ? (
-              <div className="flex items-center justify-between rounded-md border border-input bg-background px-3 py-2">
-                <span className="text-sm font-medium truncate">{selectedNabidka.nazev}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onChange({ nabidka_id: "", nabidka_query: "" })}
-                >
-                  Změnit
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <Input
-                  placeholder="Hledat zakázku…"
-                  value={row.nabidka_query}
-                  onChange={(e) => onChange({ nabidka_query: e.target.value })}
-                  autoComplete="off"
-                />
-                {filteredNabidky.length > 0 && (
-                  <div className="max-h-40 overflow-y-auto rounded-md border bg-background">
-                    {filteredNabidky.map(n => (
-                      <button
-                        key={n.id}
-                        type="button"
-                        onClick={() => onChange({ nabidka_id: n.id, nabidka_query: n.nazev })}
-                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                      >
-                        {n.nazev}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          ) : (
-            <div className="rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-              Ostatní (bez zakázky)
+      {/* Zakázka / Ostatní — full width (ne-squeezed) */}
+      <div>
+        {row.typ === "nabidka" ? (
+          selectedNabidka ? (
+            <div className="flex items-center justify-between rounded-md border border-input bg-background px-3 py-2">
+              <span className="text-sm font-medium truncate">{selectedNabidka.nazev}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onChange({ nabidka_id: "", nabidka_query: "" })}
+              >
+                Změnit
+              </Button>
             </div>
-          )}
-        </div>
-        <div className="sm:w-32">
+          ) : (
+            <div className="space-y-1">
+              <Input
+                placeholder="Hledat zakázku…"
+                value={row.nabidka_query}
+                onChange={(e) => onChange({ nabidka_query: e.target.value })}
+                autoComplete="off"
+              />
+              {filteredNabidky.length > 0 && (
+                <div className="max-h-40 overflow-y-auto rounded-md border bg-background">
+                  {filteredNabidky.map(n => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={() => onChange({ nabidka_id: n.id, nabidka_query: n.nazev })}
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                    >
+                      {n.nazev}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        ) : (
+          <div className="rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+            Ostatní (bez zakázky)
+          </div>
+        )}
+      </div>
+
+      {/* Trvání — pod zakázkou, compact */}
+      <div>
+        <div className="flex items-center gap-3">
+          <Label className="text-xs text-muted-foreground shrink-0">Trvání</Label>
           <Input
-            placeholder="např. 1:30"
+            placeholder="např. 1:30, 90m, 1h 30m"
             value={row.trvani}
             onChange={(e) => onChange({ trvani: e.target.value })}
+            className="h-9 max-w-48"
             aria-label="Trvání"
           />
           {row.trvani.trim() && (
             parsedMinut !== null && parsedMinut > 0 ? (
-              <p className="text-xs text-green-600 mt-1">→ {formatMinutes(parsedMinut)}</p>
+              <span className="text-xs text-green-600">→ {formatMinutes(parsedMinut)}</span>
             ) : (
-              <p className="text-xs text-destructive mt-1">Neplatný formát</p>
+              <span className="text-xs text-destructive">Neplatný formát</span>
             )
           )}
         </div>
