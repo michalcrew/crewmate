@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useCallback, useState } from "react"
+import { use, useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,6 +10,39 @@ import { LogOut, MapPin, Calendar, Clock } from "lucide-react"
 import { DochazkaGridV2 } from "@/components/dochazka/dochazka-grid-v2"
 import type { DochazkaRowEntry } from "@/components/dochazka/dochazka-row"
 import type { DokumentacniStav } from "@/components/brigadnici/dokumentacni-stav-badge"
+
+// User feedback 22.4.: PIN se pamatuje v sessionStorage, aby refresh
+// tabu nebo krátkodobé odhlášení neresetovalo koordinátora zpět na
+// PIN screen. sessionStorage = platí jen pro aktuální tab, zavře se tab
+// = zapomene (bezpečnější než localStorage pro shared device).
+const STORAGE_KEY = "crewmate.koord.pin"
+type StoredSession = { akceId: string; pin: string }
+
+function loadStoredPin(akceId: string): string | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as StoredSession
+    return parsed.akceId === akceId && typeof parsed.pin === "string" ? parsed.pin : null
+  } catch {
+    return null
+  }
+}
+
+function saveStoredPin(akceId: string, pin: string) {
+  if (typeof window === "undefined") return
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ akceId, pin } satisfies StoredSession))
+  } catch {
+    // storage may be blocked (incognito) — acceptable, just won't persist
+  }
+}
+
+function clearStoredPin() {
+  if (typeof window === "undefined") return
+  try { sessionStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+}
 
 type AkceInfo = {
   id: string
@@ -79,6 +112,45 @@ export default function DochazkaPage({
   const [entries, setEntries] = useState<DochazkaRowEntry[]>([])
   const [pinError, setPinError] = useState("")
   const [verifying, setVerifying] = useState(false)
+  const [autoLoading, setAutoLoading] = useState(true)
+
+  const loadWithPin = useCallback(
+    async (pinValue: string): Promise<boolean> => {
+      const data = await getKoordinatorDochazka(akceId, pinValue)
+      if ("error" in data) {
+        return false
+      }
+      setPin(pinValue)
+      setAkce(data.akce as AkceInfo)
+      setEntries(mapEntries(data.entries as unknown as RawEntry[]))
+      saveStoredPin(akceId, pinValue)
+      return true
+    },
+    [akceId],
+  )
+
+  // Auto-load from sessionStorage on mount (fixes "odhlásí a přihlásí,
+  // ale nevidí zapsané časy" — po refreshu / re-openu se PIN najde
+  // v session, data se načtou čerstvá ze serveru).
+  useEffect(() => {
+    const stored = loadStoredPin(akceId)
+    if (!stored) {
+      setAutoLoading(false)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const ok = await loadWithPin(stored)
+      if (!ok && !cancelled) {
+        // PIN invalid nebo expirovaný — vymazat a zobrazit PIN formulář
+        clearStoredPin()
+      }
+      if (!cancelled) setAutoLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [akceId, loadWithPin])
 
   const refresh = useCallback(async () => {
     if (!pin) return
@@ -97,22 +169,27 @@ export default function DochazkaPage({
       setVerifying(false)
       return
     }
-    const data = await getKoordinatorDochazka(akceId, pinValue)
+    const ok = await loadWithPin(pinValue)
     setVerifying(false)
-    if ("error" in data) {
-      setPinError(data.error ?? "Chyba načítání")
-      return
+    if (!ok) {
+      setPinError("Chyba načítání")
     }
-    setPin(pinValue)
-    setAkce(data.akce as AkceInfo)
-    setEntries(mapEntries(data.entries as unknown as RawEntry[]))
   }
 
   const handleSignOut = () => {
+    clearStoredPin()
     setPin("")
     setAkce(null)
     setEntries([])
     setPinError("")
+  }
+
+  if (autoLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <p className="text-sm text-muted-foreground">Načítám…</p>
+      </div>
+    )
   }
 
   if (!akce) {

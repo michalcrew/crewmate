@@ -58,7 +58,8 @@ export function NepriselButton({ prirazeniId, brigadnikName, editor, onDone }: B
           <DialogHeader>
             <DialogTitle>Označit jako nepřítomného?</DialogTitle>
             <DialogDescription>
-              Označit „{brigadnikName}" jako nepřítomného? Status se změní na „vypadl".
+              Označit „{brigadnikName}" jako nepřítomného? Status se změní na „vypadl"
+              a případně zapsaný příchod/odchod se vymaže.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

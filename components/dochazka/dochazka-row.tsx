@@ -168,6 +168,30 @@ export function DochazkaRow({
     }
   }, [])
 
+  // User feedback 22.4.: sync state když se `dochazka` prop změní na
+  // serveru (např. po re-login z sessionStorage, periodický refresh,
+  // nebo po "nepřišel" vymazání časů). Sync jen pro pole která uživatel
+  // nedrží rozpracovaná (value === lastServerValue && status idle).
+  const prichodServer = dochazka?.prichod ? dochazka.prichod.slice(0, 5) : ""
+  const odchodServer = dochazka?.odchod ? dochazka.odchod.slice(0, 5) : ""
+  const hodnoceniServer = dochazka?.hodnoceni != null ? String(dochazka.hodnoceni) : ""
+  const poznamkaServer = dochazka?.poznamka ?? ""
+  useEffect(() => {
+    const syncField = (field: DochazkaField, serverVal: string) => {
+      const current = state[field]
+      if (current.status !== "idle") return
+      if (current.value !== current.lastServerValue) return
+      if (current.value === serverVal) return
+      dispatch({ type: "EDIT", field, value: serverVal })
+      dispatch({ type: "SAVED", field, serverValue: serverVal })
+    }
+    syncField("prichod", prichodServer)
+    syncField("odchod", odchodServer)
+    syncField("hodnoceni", hodnoceniServer)
+    syncField("poznamka", poznamkaServer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prichodServer, odchodServer, hodnoceniServer, poznamkaServer])
+
   const attemptSave = useCallback(
     async (field: DochazkaField, attempt: number) => {
       const fieldKey = `${prirazeniId}:${field}`
@@ -246,12 +270,10 @@ export function DochazkaRow({
 
   const celeJmeno = `${brigadnik.prijmeni} ${brigadnik.jmeno}`.trim()
   const isVypadl = status === "vypadl"
-  const showNeprisel =
-    !isVypadl &&
-    !dochazka?.prichod &&
-    !dochazka?.odchod &&
-    state.prichod.value === "" &&
-    state.odchod.value === ""
+  // User feedback 22.4.: tlačítko "Nepřišel" viditelné vždy pro non-vypadl
+  // status. Koordinátor má právo opravit omylem zapsaný příchod — server
+  // vymaže existující časy při přechodu na status=vypadl.
+  const showNeprisel = !isVypadl
 
   return (
     <div
@@ -260,9 +282,12 @@ export function DochazkaRow({
       }`}
       data-prirazeni-id={prirazeniId}
     >
-      {/* Row 1: badge + jméno + telefon */}
+      {/* Row 1: badge + jméno + telefon.
+          User feedback 22.4.: Dokumentační status (nevyplněné údaje /
+          podepsaná DPP / ...) skrytý pro koordinátora — ten nemusí vědět
+          kdo je OSVČ, kdo brigádník a v jakém stavu jsou DPP. */}
       <div className="flex flex-wrap items-center gap-2 mb-2">
-        {dokumentacniStav ? (
+        {dokumentacniStav && editor.type === "admin" ? (
           <DokumentacniStavBadge stav={dokumentacniStav} />
         ) : null}
         <span className="font-semibold text-base">{celeJmeno}</span>

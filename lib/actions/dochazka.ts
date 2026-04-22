@@ -150,6 +150,31 @@ const FIELD_VALIDATORS = {
   poznamka: z.string().max(500, "Poznámka max 500 znaků").nullable(),
 } as const
 
+/**
+ * User feedback 22.4.: čas příchod/odchod se automaticky zaokrouhlí
+ * matematicky na 15 minut (half-up na nearest čtvrthodinu).
+ *  7:07 → 7:00
+ *  7:08 → 7:15
+ *  7:22 → 7:15
+ *  7:23 → 7:30
+ *  7:52 → 7:45
+ *  7:53 → 8:00
+ *  23:53 → 24:00 → wrap na 23:45 (aby nepřetekla 23:59; edge case).
+ */
+function roundTimeTo15(raw: string): string {
+  const m = raw.match(/^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/)
+  if (!m) return raw
+  const hh = Number(m[1])
+  const mm = Number(m[2])
+  const totalMin = hh * 60 + mm
+  const rounded = Math.round(totalMin / 15) * 15
+  // Clamp na [0, 23:45] — 24:00 není validní time
+  const clamped = Math.min(rounded, 23 * 60 + 45)
+  const rh = Math.floor(clamped / 60)
+  const rm = clamped % 60
+  return `${String(rh).padStart(2, "0")}:${String(rm).padStart(2, "0")}`
+}
+
 function validateFieldValue(field: DochazkaField, value: unknown): { ok: true; value: string | number | null } | { ok: false; error: string } {
   const normalized = value === "" || value === undefined ? null : value
   const schema = FIELD_VALIDATORS[field]
@@ -157,7 +182,12 @@ function validateFieldValue(field: DochazkaField, value: unknown): { ok: true; v
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Neplatná hodnota" }
   }
-  return { ok: true, value: parsed.data as string | number | null }
+  let cleanValue = parsed.data as string | number | null
+  // Zaokrouhlení jen pro time fields (prichod/odchod) a jen pokud není NULL.
+  if ((field === "prichod" || field === "odchod") && typeof cleanValue === "string") {
+    cleanValue = roundTimeTo15(cleanValue)
+  }
+  return { ok: true, value: cleanValue }
 }
 
 /**
@@ -392,14 +422,22 @@ export async function markNepriselBrigadnik(
     editorId = koordinatorFingerprint(editor.pin, akceId)
   }
 
-  // Guard — už má zaznamenaný příchod?
-  const { data: doch } = await supabase
+  // User feedback 22.4.: guard na existující příchod odstraněn.
+  // Koordinátor často omylem zapíše příchod brigádníkovi, který ale
+  // reálně nedorazil. Musí to jít opravit.
+  // Pokud existuje dochazka řádek s vyplněným časem, vynulujeme ho
+  // (aby se zabránilo fantom-dochazce pro "vypadl" status).
+  const { data: existingDoch } = await supabase
     .from("dochazka")
-    .select("prichod")
+    .select("id, prichod, odchod, hodnoceni, poznamka")
     .eq("prirazeni_id", prirazeniId)
     .maybeSingle()
-  if (doch && doch.prichod) {
-    return { error: "Brigádník už má zaznamenaný příchod" }
+
+  if (existingDoch) {
+    await supabase
+      .from("dochazka")
+      .update({ prichod: null, odchod: null, hodin_celkem: null })
+      .eq("id", existingDoch.id)
   }
 
   // Update status
@@ -413,12 +451,16 @@ export async function markNepriselBrigadnik(
     brigadnik_id: brigadnikId,
     akce_id: akceId,
     typ: "prirazeni_neprisel",
-    popis: "Brigádník nepřišel na akci",
+    popis: existingDoch && (existingDoch.prichod || existingDoch.odchod)
+      ? `Brigádník nepřišel (předchozí časy vymazány: příchod=${existingDoch.prichod ?? "—"}, odchod=${existingDoch.odchod ?? "—"})`
+      : "Brigádník nepřišel na akci",
     metadata: {
       prirazeni_id: prirazeniId,
       editor_type: editor.type,
       editor_id: editorId,
       previous_status: prir.status,
+      cleared_prichod: existingDoch?.prichod ?? null,
+      cleared_odchod: existingDoch?.odchod ?? null,
     },
   })
 
