@@ -47,5 +47,22 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // QW-8 / SEC-015: token-based public routes must not leak token via
+  // Referer header to external links and must not be cached (shared proxy
+  // or browser back-button could expose token to another user).
+  // Applies to /formular/[token] (brigádník dotazník) and any other
+  // signed-link route we add in the future under these prefixes.
+  if (
+    request.nextUrl.pathname.startsWith("/formular/") ||
+    request.nextUrl.pathname.startsWith("/dochazka/")
+  ) {
+    supabaseResponse.headers.set("Referrer-Policy", "no-referrer")
+    supabaseResponse.headers.set(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, private"
+    )
+    supabaseResponse.headers.set("Pragma", "no-cache")
+  }
+
   return supabaseResponse
 }

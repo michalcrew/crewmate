@@ -5,7 +5,15 @@ import { DotaznikForm } from "@/components/web/dotaznik-form"
 
 export const metadata: Metadata = {
   title: "Doplnění údajů — Crewmate",
+  // QW-8 / SEC-015: token v URL nesmí leakovat do Referer header.
+  // Kompletní HTTP hlavičky (Cache-Control + Referrer-Policy) jsou
+  // nastaveny v middleware pro /formular/ prefix.
+  referrer: "no-referrer",
+  robots: { index: false, follow: false, nocache: true },
 }
+
+// Ensure this page is not statically cached (dynamic token-based).
+export const dynamic = "force-dynamic"
 
 export default async function FormularPage({
   params,
