@@ -15,7 +15,6 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NAV_SECTIONS } from "@/lib/constants"
-import { MobileNav } from "./mobile-nav"
 
 const ICONS = {
   LayoutDashboard,
@@ -34,11 +33,6 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger — fixed top-left, only on mobile */}
-      <div className="fixed top-3 left-3 z-50 md:hidden">
-        <MobileNav />
-      </div>
-
       {/* Logo */}
       <div className="flex h-14 items-center px-5 border-b border-sidebar-border shrink-0">
         <Link href="/app" className="block">
