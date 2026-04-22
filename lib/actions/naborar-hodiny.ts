@@ -535,6 +535,113 @@ export async function addHodiny(
   return { success: true, id: (inserted as { id: string }).id }
 }
 
+// ================================================================
+// Bulk insert — multi-řádkový dialog (1 datum + N (zakázka/ostatní + trvání))
+// ================================================================
+
+const bulkRowSchema = z.object({
+  typ_zaznamu: z.enum(["nabidka", "ostatni"]),
+  nabidka_id: z.string().uuid().nullable().optional(),
+  trvani_minut: z
+    .number()
+    .int("Trvání musí být celé číslo minut")
+    .positive("Trvání musí být kladné")
+    .max(1440, "Trvání nesmí přesáhnout 24 hodin"),
+}).superRefine((val, ctx) => {
+  if (val.typ_zaznamu === "nabidka" && !val.nabidka_id) {
+    ctx.addIssue({ code: "custom", message: "Chybí zakázka", path: ["nabidka_id"] })
+  }
+  if (val.typ_zaznamu === "ostatni" && val.nabidka_id) {
+    ctx.addIssue({ code: "custom", message: "Ostatní nesmí mít zakázku", path: ["nabidka_id"] })
+  }
+})
+
+const addHodinyBulkSchema = z.object({
+  datum: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Neplatný formát data"),
+  misto_prace: z.enum(["kancelar", "remote", "akce"]).nullable().optional(),
+  napln_prace: z.string().min(1, "Náplň práce je povinná").max(2000),
+  duvod_zpozdeni: z.string().max(500).nullable().optional(),
+  rows: z.array(bulkRowSchema).min(1, "Přidej alespoň jeden záznam"),
+}).superRefine((val, ctx) => {
+  const total = val.rows.reduce((a, r) => a + r.trvani_minut, 0)
+  if (total > 1440) {
+    ctx.addIssue({ code: "custom", message: "Součet trvání přesahuje 24 hodin", path: ["rows"] })
+  }
+})
+
+export type AddHodinyBulkInput = z.input<typeof addHodinyBulkSchema>
+
+/**
+ * Bulk insert záznamů hodin — sdílí datum / místo / náplň, rozpadá do N řádků.
+ * Použití: 1 session náborářky = N zakázek, zapíše najednou s jedním popisem.
+ * Atomicita: Supabase batch insert — všechny řádky se vloží jednou query.
+ */
+export async function addHodinyBulk(
+  input: AddHodinyBulkInput,
+): Promise<{ success: true; count: number } | { error: string }> {
+  const me = await getInternalUser()
+  if (!me) return { error: "Nepřihlášen" }
+
+  const parsed = addHodinyBulkSchema.safeParse(input)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
+  }
+  const data = parsed.data
+
+  const entryDate = new Date(data.datum)
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  entryDate.setHours(0, 0, 0, 0)
+  const diffDays = Math.floor((now.getTime() - entryDate.getTime()) / 86400000)
+  const isLate = diffDays > 7
+  if (isLate && !data.duvod_zpozdeni) {
+    return { error: "Zpětný zápis (>7 dní) vyžaduje uvedení důvodu zpoždění" }
+  }
+
+  const admin = createAdminClient()
+  const payload = data.rows.map(r => ({
+    user_id: me.id,
+    datum: data.datum,
+    trvani_minut: r.trvani_minut,
+    misto_prace: data.misto_prace ?? null,
+    napln_prace: data.napln_prace,
+    typ_zaznamu: r.typ_zaznamu,
+    nabidka_id: r.typ_zaznamu === "nabidka" ? (r.nabidka_id ?? null) : null,
+    je_zpetny_zapis: isLate,
+    duvod_zpozdeni: isLate ? (data.duvod_zpozdeni ?? null) : null,
+  }))
+
+  const { data: inserted, error } = await admin
+    .from("naborar_hodiny")
+    .insert(payload)
+    .select("id, nabidka_id, trvani_minut, typ_zaznamu")
+
+  if (error || !inserted) {
+    return { error: error?.message ?? "Nepodařilo se uložit" }
+  }
+
+  const totalMinut = data.rows.reduce((a, r) => a + r.trvani_minut, 0)
+  await admin.from("historie").insert({
+    user_id: me.id,
+    nabidka_id: null,
+    typ: "hodiny_pridano",
+    popis: `Zapsáno ${data.rows.length} záznamů (celkem ${totalMinut} min) — ${data.datum}`,
+    metadata: {
+      bulk: true,
+      count: data.rows.length,
+      total_minut: totalMinut,
+      hodiny_ids: inserted.map(r => (r as { id: string }).id),
+      je_zpetny_zapis: isLate,
+    },
+  })
+
+  revalidatePath("/app/hodiny")
+  revalidatePath("/app/hodiny/prehled")
+  revalidatePath("/app/dashboard")
+
+  return { success: true, count: inserted.length }
+}
+
 const updateHodinySchema = addHodinyBaseSchema.partial().superRefine(
   (val, ctx) => {
     // Partial validation: když přijde typ_zaznamu, musí být párováno s nabidka_id
