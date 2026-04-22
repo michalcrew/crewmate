@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sendGmailMessage } from "@/lib/email/gmail-send"
 import { encrypt, maybeEncryptDic } from "@/lib/utils/crypto"
+import { getVocativeName } from "@/lib/utils/vocative"
 import { dotaznikSchema } from "@/lib/schemas/dotaznik"
 import { maybeAutoTransitionPipeline } from "./pipeline"
 
@@ -312,10 +313,13 @@ export async function sendDotaznikEmail(
     .eq("aktivni", true)
     .single()
 
+  const osloveni = getVocativeName(brigadnik.jmeno)
   const subject = (template?.predmet ?? "Doplnění údajů — Crewmate")
     .replaceAll("{{jmeno}}", brigadnik.jmeno)
-  const html = (template?.obsah_html ?? `<p>Ahoj ${brigadnik.jmeno},</p><p><a href="${link}">Doplnit údaje</a></p>`)
+    .replaceAll("{{osloveni}}", osloveni)
+  const html = (template?.obsah_html ?? `<p>Ahoj ${osloveni},</p><p><a href="${link}">Doplnit údaje</a></p>`)
     .replaceAll("{{jmeno}}", brigadnik.jmeno)
+    .replaceAll("{{osloveni}}", osloveni)
     .replaceAll("{{prijmeni}}", brigadnik.prijmeni)
     .replaceAll("{{odkaz_formular}}", link)
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { getVocativeName } from "@/lib/utils/vocative"
 import { z } from "zod"
 
 // F-0015 HF — RLS lookup helper (pattern z F-0013 HF4c updateUserPodpis).
@@ -495,6 +496,7 @@ export async function odeslatBriefing(akceId: string, briefingText?: string) {
       const b = r.brigadnik!
       const vars: Record<string, string> = {
         jmeno: b.jmeno,
+        osloveni: getVocativeName(b.jmeno),
         akce_nazev: akce.nazev,
         akce_datum: new Date(akce.datum).toLocaleDateString("cs-CZ"),
         akce_misto: akce.misto ?? "",
