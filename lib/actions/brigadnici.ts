@@ -848,11 +848,18 @@ export async function getBrigadnikPipeline(brigadnikId: string) {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from("pipeline_entries")
-    .select("*, nabidka:nabidky(id, nazev, typ, stav)")
+    .select("*, nabidka:nabidky(id, nazev, typ)")
     .eq("brigadnik_id", brigadnikId)
     .order("created_at", { ascending: false })
 
-  if (error) return []
+  if (error) {
+    // MD-2: do F-0012 byl na nabidky sloupec `stav` — ten je ale DROPped.
+    // Pokud query padne z jiného důvodu, logujeme do server logu, ale
+    // stále vracíme [] aby UI nespadlo. Typ vrátí 'ukoncena' pokud je
+    // nabidka archivní (nahrazuje bývalý stav='ukoncena').
+    console.error("[getBrigadnikPipeline] query failed", error)
+    return []
+  }
   return data
 }
 
