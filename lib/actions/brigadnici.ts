@@ -55,10 +55,22 @@ export async function getBrigadnici(filter?: {
   // deleted_at IS NULL, ale explicit pojistka (kdyby se volalo přes admin).
   // Žádný navíc where clause — view se o to stará.
 
-  // F-0021a: blokovaní brigádníci skryti v default listu. Admin je může
-  // zobrazit přes URL query param ?blokovani=1 (UI toggle v filters).
+  // F-0021a: blokovaní brigádníci skryti v default listu.
+  // POZN: v_brigadnici_aktualni view neexpozuje `zablokovan_at`
+  // (view vytvořena v F-0016 přes `SELECT b.*` — Postgres snapshotuje
+  // sloupce při CREATE VIEW, nové sloupce přidané později nejsou
+  // automaticky součástí expanze). Schema freeze po 27.4. neumožňuje
+  // view recreate, takže filter děláme přes separate subquery proti
+  // base table a používáme .not("id", "in", ...) na view.
   if (!filter?.zahrnoutBlokovane) {
-    query = query.is("zablokovan_at", null)
+    const { data: blocked } = await supabase
+      .from("brigadnici")
+      .select("id")
+      .not("zablokovan_at", "is", null)
+    const blockedIds = (blocked ?? []).map((b) => (b as { id: string }).id)
+    if (blockedIds.length > 0) {
+      query = query.not("id", "in", `(${blockedIds.join(",")})`)
+    }
   }
 
   if (filter?.typFilter && filter.typFilter !== "all") {
