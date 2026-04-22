@@ -19,10 +19,11 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
-import { Calendar, MapPin, Copy, Send, ClipboardList, Loader2, MoreHorizontal, Ban } from "lucide-react"
+import { Calendar, MapPin, Copy, Send, ClipboardList, Loader2, MoreHorizontal, Ban, Search, X } from "lucide-react"
 import { PIPELINE_STATES } from "@/lib/constants"
 import { updatePipelineStav } from "@/lib/actions/pipeline"
 import { assignBrigadnikToAkce, unassignBrigadnikFromAkce, odeslatBriefing } from "@/lib/actions/akce"
@@ -38,6 +39,7 @@ import { ZrusitAkciDialog } from "@/components/akce/zrusit-akci-dialog"
 export type PipelineEntry = {
   id: string
   stav: string
+  created_at: string
   brigadnik: {
     id: string
     jmeno: string
@@ -77,6 +79,18 @@ export type AkceWithPrirazeni = {
 }
 
 const ELIGIBLE_STAVS = ["prijaty_nehotova_admin", "prijaty_vse_vyreseno"]
+
+// Sloupce, kde chceme staré přihlášky nahoru (attention na "dluh"). Zbývající
+// sloupce (archive: prijaty_vse_vyreseno, odmitnuty) ponechají DB default.
+const SORT_OLDEST_FIRST = new Set(["zajemce", "kontaktovan", "prijaty_nehotova_admin"])
+
+// Limit per sloupec (uchrání UI před 150+ kartami). Search toto obchází.
+const COLUMN_LIMIT = 30
+
+// Diakritika-insensitive normalizace pro fulltext search.
+function normalize(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+}
 
 // ========== Main component ==========
 
@@ -129,19 +143,44 @@ function PipelineSection({
 }) {
   const [activeEntry, setActiveEntry] = useState<PipelineEntry | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [search, setSearch] = useState("")
+  const [expandedCols, setExpandedCols] = useState<Set<string>>(new Set())
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   )
 
-  const pipelineByStav = Object.keys(PIPELINE_STATES).reduce(
-    (acc, stav) => {
-      acc[stav] = pipeline.filter(e => e.stav === stav)
-      return acc
-    },
-    {} as Record<string, PipelineEntry[]>
-  )
+  const searchActive = search.trim().length > 0
+
+  const pipelineByStav = useMemo(() => {
+    const needle = normalize(search.trim())
+    const telNeedle = search.trim().replace(/\s+/g, "")
+
+    const filtered = searchActive
+      ? pipeline.filter(e => {
+          const b = e.brigadnik
+          if (!b) return false
+          return (
+            normalize(b.jmeno).includes(needle) ||
+            normalize(b.prijmeni).includes(needle) ||
+            (b.telefon ?? "").replace(/\s+/g, "").includes(telNeedle)
+          )
+        })
+      : pipeline
+
+    const byStav: Record<string, PipelineEntry[]> = {}
+    for (const stav of Object.keys(PIPELINE_STATES)) {
+      let entries = filtered.filter(e => e.stav === stav)
+      if (SORT_OLDEST_FIRST.has(stav)) {
+        entries = [...entries].sort((a, b) =>
+          (a.created_at ?? "").localeCompare(b.created_at ?? "")
+        )
+      }
+      byStav[stav] = entries
+    }
+    return byStav
+  }, [pipeline, search, searchActive])
 
   function handleDragStart(event: DragStartEvent) {
     if (readOnly) return
@@ -182,9 +221,32 @@ function PipelineSection({
       onDragEnd={handleDragEnd}
     >
       <section className={isPending ? "opacity-60 pointer-events-none" : ""}>
-        <h2 className="text-lg font-medium mb-3">
-          Pipeline ({pipeline.length} brigádník{pipeline.length === 1 ? "" : pipeline.length < 5 ? "i" : "ů"})
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h2 className="text-lg font-medium">
+            Pipeline ({pipeline.length} brigádník{pipeline.length === 1 ? "" : pipeline.length < 5 ? "i" : "ů"})
+          </h2>
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Hledat jméno, příjmení, telefon…"
+              className="pl-9 pr-9 h-9"
+              aria-label="Vyhledávat v pipeline"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded hover:bg-muted flex items-center justify-center"
+                aria-label="Vymazat hledání"
+              >
+                <X className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            )}
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {Object.entries(PIPELINE_STATES).map(([stav, config]) => (
             <PipelineColumn
@@ -194,6 +256,16 @@ function PipelineSection({
               entries={pipelineByStav[stav] ?? []}
               readOnly={readOnly}
               dokumentacniMap={dokumentacniMap}
+              limit={searchActive ? null : COLUMN_LIMIT}
+              expanded={expandedCols.has(stav)}
+              onToggleExpand={() =>
+                setExpandedCols(prev => {
+                  const next = new Set(prev)
+                  if (next.has(stav)) next.delete(stav)
+                  else next.add(stav)
+                  return next
+                })
+              }
             />
           ))}
         </div>
@@ -217,14 +289,25 @@ function PipelineColumn({
   entries,
   readOnly,
   dokumentacniMap,
+  limit,
+  expanded,
+  onToggleExpand,
 }: {
   stav: string
   config: { label: string; color: string }
   entries: PipelineEntry[]
   readOnly: boolean
   dokumentacniMap: Record<string, string>
+  limit: number | null
+  expanded: boolean
+  onToggleExpand: () => void
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: `col:${stav}`, disabled: readOnly })
+
+  const total = entries.length
+  const isLimited = limit != null && !expanded && total > limit
+  const visibleEntries = isLimited ? entries.slice(0, limit) : entries
+  const hiddenCount = total - visibleEntries.length
 
   return (
     <div
@@ -235,10 +318,12 @@ function PipelineColumn({
         <Badge variant="outline" className={`${config.color} text-xs`}>
           {config.label}
         </Badge>
-        <span className="text-xs text-muted-foreground">{entries.length}</span>
+        <span className="text-xs text-muted-foreground">
+          {isLimited ? `${visibleEntries.length} / ${total}` : total}
+        </span>
       </div>
       <div className="space-y-2">
-        {entries.map(entry => (
+        {visibleEntries.map(entry => (
           <DraggableBrigadnikCard
             key={entry.id}
             entry={entry}
@@ -246,10 +331,21 @@ function PipelineColumn({
             dokumentacniStav={dokumentacniMap[entry.brigadnik?.id ?? ""]}
           />
         ))}
-        {entries.length === 0 && (
+        {total === 0 && (
           <div className="border border-dashed rounded-lg p-3 text-center text-xs text-muted-foreground">
             Přetáhněte sem
           </div>
+        )}
+        {(isLimited || (expanded && limit != null && total > limit)) && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onToggleExpand}
+            className="w-full h-8 text-xs text-muted-foreground"
+          >
+            {isLimited ? `Zobrazit všechny (+${hiddenCount})` : "Sbalit"}
+          </Button>
         )}
       </div>
     </div>

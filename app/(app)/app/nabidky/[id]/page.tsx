@@ -73,6 +73,7 @@ async function enrichPipeline(
     return {
       id: p.id,
       stav: p.stav,
+      created_at: (p as unknown as { created_at: string }).created_at,
       brigadnik: b ?? null,
       naborar: p.naborar ?? null,
       dpp_stav: sm?.dpp_stav ?? null,
