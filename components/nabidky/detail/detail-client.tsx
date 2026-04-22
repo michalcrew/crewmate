@@ -332,15 +332,6 @@ function BrigadnikCardInner({
           />
         </div>
         <div className="flex flex-wrap items-center gap-1">
-          {b.dotaznik_vyplnen ? (
-            <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">
-              Údaje
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px]">
-              Bez údajů
-            </Badge>
-          )}
           {dppOk && (
             <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">DPP</Badge>
           )}
