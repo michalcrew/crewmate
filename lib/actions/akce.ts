@@ -51,9 +51,10 @@ const updateAkceFullSchema = z.object({
   poznamky: z.string().optional(),
 })
 
-function generatePin(): string {
-  return String(Math.floor(100000 + Math.random() * 900000))
-}
+// F-0021b: PIN se generuje se současným bcrypt hashem (dual-write).
+// Plaintext zůstává (pin_kod) pro legacy koordinátory / QR odkazy dokud
+// nebude backfill kompletní. hash (pin_hash) se používá pro verify první.
+import { generatePinPair } from "@/lib/utils/pin"
 
 // ================================================================
 // F-0015 — Lazy auto-transition planovana → probehla
@@ -226,12 +227,15 @@ export async function createAkce(formData: FormData) {
     }
   }
 
+  // F-0021b: dual-write PIN (plaintext + bcrypt hash).
+  const pinPair = await generatePinPair()
   const { data: inserted, error } = await supabase.from("akce").insert({
     ...parsed.data,
     cas_od: parsed.data.cas_od || null,
     cas_do: parsed.data.cas_do || null,
     nabidka_id: parsed.data.nabidka_id || null,
-    pin_kod: generatePin(),
+    pin_kod: pinPair.plaintext,
+    pin_hash: pinPair.hash,
   }).select("id").single()
 
   if (error) return { error: error.message }

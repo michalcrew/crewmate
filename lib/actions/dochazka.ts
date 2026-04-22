@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { z } from "zod"
 import { createHash } from "crypto"
+import { verifyPin as checkPin } from "@/lib/utils/pin"
 
 // Simple in-memory rate limiting (per process — sufficient for serverless)
 const pinAttempts = new Map<string, { count: number; resetAt: number }>()
@@ -33,11 +34,14 @@ export async function verifyPin(akceId: string, pin: string) {
   const supabase = createAdminClient()
   const { data } = await supabase
     .from("akce")
-    .select("id, nazev, datum, cas_od, cas_do, misto, pin_kod")
+    .select("id, nazev, datum, cas_od, cas_do, misto, pin_kod, pin_hash")
     .eq("id", akceId)
     .single()
 
-  if (!data || data.pin_kod !== pin) {
+  const pinOk = data
+    ? await checkPin(pin, { pin_hash: data.pin_hash, pin_kod: data.pin_kod })
+    : false
+  if (!data || !pinOk) {
     return { error: "Neplatný PIN" }
   }
 
@@ -49,11 +53,14 @@ export async function getDochazkaByAkce(akceId: string, pin: string) {
   const supabase = createAdminClient()
   const { data: akce } = await supabase
     .from("akce")
-    .select("pin_kod")
+    .select("pin_kod, pin_hash")
     .eq("id", akceId)
     .single()
 
-  if (!akce || akce.pin_kod !== pin) {
+  const pinOk = akce
+    ? await checkPin(pin, { pin_hash: akce.pin_hash, pin_kod: akce.pin_kod })
+    : false
+  if (!akce || !pinOk) {
     return []
   }
 
@@ -187,10 +194,10 @@ export async function upsertDochazkaField(
 
   const supabase = createAdminClient()
 
-  // 3. Zjisti prirazeni → akce_id, brigadnik_id, pin_kod
+  // 3. Zjisti prirazeni → akce_id, brigadnik_id, pin_kod, pin_hash (F-0021b)
   const { data: prir } = await supabase
     .from("prirazeni")
-    .select("id, akce_id, brigadnik_id, akce:akce(pin_kod)")
+    .select("id, akce_id, brigadnik_id, akce:akce(pin_kod, pin_hash)")
     .eq("id", prirazeniId)
     .single()
 
@@ -198,11 +205,15 @@ export async function upsertDochazkaField(
 
   const akceId = prir.akce_id as string
   const brigadnikId = prir.brigadnik_id as string
-  const pinKod = ((prir.akce as unknown) as { pin_kod: string } | null)?.pin_kod
+  const akceData = ((prir.akce as unknown) as { pin_kod: string | null; pin_hash: string | null } | null)
 
   // 4. PIN verify + rate limit pro koordinátora
   if (editor.type === "koordinator") {
-    if (!pinKod || pinKod !== editor.pin) return { error: "Neplatný PIN" }
+    const pinOk = await checkPin(editor.pin, {
+      pin_hash: akceData?.pin_hash ?? null,
+      pin_kod: akceData?.pin_kod ?? null,
+    })
+    if (!pinOk) return { error: "Neplatný PIN" }
     editorId = koordinatorFingerprint(editor.pin, akceId)
     if (!checkRateLimit(`save:koord:${editorId}`, 60, 60_000)) {
       return { error: "Příliš mnoho zápisů. Zkuste to za chvíli." }
@@ -359,21 +370,25 @@ export async function markNepriselBrigadnik(
 
   const { data: prir } = await supabase
     .from("prirazeni")
-    .select("id, akce_id, brigadnik_id, status, akce:akce(pin_kod)")
+    .select("id, akce_id, brigadnik_id, status, akce:akce(pin_kod, pin_hash)")
     .eq("id", prirazeniId)
     .single()
   if (!prir) return { error: "Přiřazení nenalezeno" }
 
   const akceId = prir.akce_id as string
   const brigadnikId = prir.brigadnik_id as string
-  const pinKod = ((prir.akce as unknown) as { pin_kod: string } | null)?.pin_kod
+  const akceData = ((prir.akce as unknown) as { pin_kod: string | null; pin_hash: string | null } | null)
 
   // Koordinator PIN check
   let editorId: string
   if (editor.type === "admin") {
     editorId = editor.id
   } else {
-    if (!pinKod || pinKod !== editor.pin) return { error: "Neplatný PIN" }
+    const pinOk = await checkPin(editor.pin, {
+      pin_hash: akceData?.pin_hash ?? null,
+      pin_kod: akceData?.pin_kod ?? null,
+    })
+    if (!pinOk) return { error: "Neplatný PIN" }
     editorId = koordinatorFingerprint(editor.pin, akceId)
   }
 
@@ -426,7 +441,7 @@ export async function undoNepriselBrigadnik(
 
   const { data: prir } = await supabase
     .from("prirazeni")
-    .select("id, akce_id, brigadnik_id, status, akce:akce(pin_kod)")
+    .select("id, akce_id, brigadnik_id, status, akce:akce(pin_kod, pin_hash)")
     .eq("id", prirazeniId)
     .single()
   if (!prir) return { error: "Přiřazení nenalezeno" }
@@ -437,13 +452,17 @@ export async function undoNepriselBrigadnik(
 
   const akceId = prir.akce_id as string
   const brigadnikId = prir.brigadnik_id as string
-  const pinKod = ((prir.akce as unknown) as { pin_kod: string } | null)?.pin_kod
+  const akceData = ((prir.akce as unknown) as { pin_kod: string | null; pin_hash: string | null } | null)
 
   let editorId: string
   if (editor.type === "admin") {
     editorId = editor.id
   } else {
-    if (!pinKod || pinKod !== editor.pin) return { error: "Neplatný PIN" }
+    const pinOk = await checkPin(editor.pin, {
+      pin_hash: akceData?.pin_hash ?? null,
+      pin_kod: akceData?.pin_kod ?? null,
+    })
+    if (!pinOk) return { error: "Neplatný PIN" }
     editorId = koordinatorFingerprint(editor.pin, akceId)
   }
 
@@ -543,11 +562,14 @@ export async function getKoordinatorDochazka(akceId: string, pin: string) {
   const supabase = createAdminClient()
   const { data: akce } = await supabase
     .from("akce")
-    .select("id, nazev, datum, cas_od, cas_do, misto, stav, nabidka_id, pin_kod")
+    .select("id, nazev, datum, cas_od, cas_do, misto, stav, nabidka_id, pin_kod, pin_hash")
     .eq("id", akceId)
     .single()
 
-  if (!akce || akce.pin_kod !== pin) {
+  const pinOk = akce
+    ? await checkPin(pin, { pin_hash: akce.pin_hash, pin_kod: akce.pin_kod })
+    : false
+  if (!akce || !pinOk) {
     return { error: "Neplatný PIN" as const }
   }
 

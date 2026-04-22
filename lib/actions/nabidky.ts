@@ -58,9 +58,8 @@ function generateSlug(nazev: string): string {
     .replace(/^-|-$/g, "")
 }
 
-function generatePin(): string {
-  return String(Math.floor(100000 + Math.random() * 900000))
-}
+// F-0021b: dual-write PIN (plaintext + bcrypt) — viz generatePinPair.
+import { generatePinPair } from "@/lib/utils/pin"
 
 async function getInternalUserId(): Promise<string | null> {
   const supabase = await createClient()
@@ -247,6 +246,7 @@ export async function createNabidka(formData: FormData) {
 
   // For jednodenni: also create the akce
   if (data.typ === "jednodenni") {
+    const pinPair = await generatePinPair()
     const { error: akceError } = await supabase.from("akce").insert({
       nazev: data.nazev,
       datum: data.akce_datum,
@@ -256,7 +256,8 @@ export async function createNabidka(formData: FormData) {
       klient: data.klient || null,
       nabidka_id: inserted.id,
       pocet_lidi: data.akce_pocet_lidi ?? data.pocet_lidi ?? null,
-      pin_kod: generatePin(),
+      pin_kod: pinPair.plaintext,
+      pin_hash: pinPair.hash,
     })
 
     if (akceError) {
@@ -363,9 +364,10 @@ export async function updateNabidka(id: string, formData: FormData) {
         if (updErr) return { error: `Zakázka uložena, ale akce se nepodařilo aktualizovat: ${updErr.message}` }
         akceMessage = " + akce aktualizována"
       } else {
+        const pinPair = await generatePinPair()
         const { error: insErr } = await supabase
           .from("akce")
-          .insert({ ...akcePayload, nabidka_id: id, pin_kod: generatePin() })
+          .insert({ ...akcePayload, nabidka_id: id, pin_kod: pinPair.plaintext, pin_hash: pinPair.hash })
         if (insErr) return { error: `Zakázka uložena, ale akce se nepodařilo vytvořit: ${insErr.message}` }
         akceMessage = " + akce vytvořena"
       }
