@@ -37,19 +37,26 @@ export interface EnrichedBrigadnikForFilter {
   dpp_tento_rok?: string | null
   // prohlaseni_stav z v_brigadnici_aktualni: 'zadny' | 'odeslano' | 'podepsano'
   prohlaseni_stav?: string | null
+  /** Počet prirazeni se status='prirazeny'. User feedback 22.4.:
+   *  alerty bez_dpp / bez_dotazniku platí jen pro obsazené brigádníky —
+   *  zájemci v pipeline bez přiřazení nás netrápí. */
+  pocet_akci?: number | null
 }
 
 /**
  * Produkuje predikát aplikovatelný na enriched brigádníky.
  * Per F-0017 D-F0017-07: per-rok DPP logika.
  *
- * Pravidla:
- *  - `bez_dpp`: typ_brigadnika != 'osvc' AND dpp_tento_rok NOT IN ('podepsano')
- *    (tj. zadny, odeslano, ukoncena — vypršelá DPP counts urgentně.)
+ * Pravidla (user feedback 22.4.):
+ *  - `bez_dpp`: typ_brigadnika != 'osvc' AND dpp_tento_rok != 'podepsano'
+ *    AND **pocet_akci > 0** (jen obsazení — zájemci bez přiřazení se ignorují).
  *  - `bez_prohlaseni`: typ_brigadnika != 'osvc' AND chce_ruzove_prohlaseni = true
- *    AND prohlaseni_stav != 'podepsano'
- *  - `bez_dotazniku`: dotaznik_vyplnen != true (null / false)
- *  - `osvc_bez_ico`: typ_brigadnika = 'osvc' AND (osvc_ico IS NULL OR osvc_ico = '')
+ *    AND prohlaseni_stav != 'podepsano'. (Prohlášení = jen u lidí, kteří ho
+ *    chtějí; ostatní irrelevant — chce_ruzove_prohlaseni už filtruje.)
+ *  - `bez_dotazniku`: dotaznik_vyplnen != true AND **pocet_akci > 0**
+ *    (stejné odůvodnění jako bez_dpp — zájemci v pipeline bez přiřazení
+ *    nevyplněný dotazník netrápí).
+ *  - `osvc_bez_ico`: typ_brigadnika = 'osvc' AND (osvc_ico IS NULL OR '').
  */
 export function buildDokumentacniPredicate(
   key: AlertFilterKey,
@@ -58,6 +65,7 @@ export function buildDokumentacniPredicate(
     case "bez_dpp":
       return (b) => {
         if (b.typ_brigadnika === "osvc") return false
+        if ((b.pocet_akci ?? 0) === 0) return false
         const stav = b.dpp_tento_rok ?? "zadny"
         return stav !== "podepsano"
       }
@@ -69,7 +77,10 @@ export function buildDokumentacniPredicate(
         return stav !== "podepsano"
       }
     case "bez_dotazniku":
-      return (b) => b.dotaznik_vyplnen !== true
+      return (b) => {
+        if ((b.pocet_akci ?? 0) === 0) return false
+        return b.dotaznik_vyplnen !== true
+      }
     case "osvc_bez_ico":
       return (b) => {
         if (b.typ_brigadnika !== "osvc") return false

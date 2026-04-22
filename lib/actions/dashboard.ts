@@ -39,6 +39,11 @@ export interface DashboardAlert {
 }
 
 export interface TeamSouhrn {
+  /** Unikátní brigádníci v pipeline (stav IN zajemce/kontaktovan/prijaty_*).
+   *  User feedback 22.4.: "nejsou to aktivní brigádníci, jen zájemci v databázi". */
+  zajemciVDatabazi: number
+  /** Brigádníci přiřazeni (status='prirazeny') na akci v budoucnu NEBO
+   *  během posledních 6 měsíců. Distinct brigadnik_id. */
   aktivniBrigadnici: number
   akceTentoTyden: number
   bezDpp: number
@@ -141,7 +146,9 @@ export async function getNadchazejiciAkceWithObsazenost(
 }
 
 // ================================================================
-// Nepodepsané DPP s akcí tento týden (US-1E-1)
+// Nepodepsané DPP s akcí dnes/zítra/pozítří (US-1E-1)
+// User feedback 22.4.: 3denní okno je urgentní (dnes/zítra/pozítří).
+// 7denní scope byl moc volný — DPP za týden se stihne, dnes nestihne.
 // ================================================================
 
 export async function getNepodepsaneDppAkceTentoTyden(): Promise<{
@@ -150,17 +157,17 @@ export async function getNepodepsaneDppAkceTentoTyden(): Promise<{
 }> {
   const supabase = await createClient()
   const today = new Date()
-  const weekAhead = new Date(Date.now() + 7 * 86400000)
+  const threeDaysAhead = new Date(Date.now() + 2 * 86400000) // today + 2 = dnes/zítra/pozítří (3 dny včetně dneška)
   const todayStr = today.toISOString().slice(0, 10)
-  const weekStr = weekAhead.toISOString().slice(0, 10)
+  const windowStr = threeDaysAhead.toISOString().slice(0, 10)
 
-  // 1) Načti akce v okně next 7 dnů se statusem planovana
+  // 1) Načti akce v okně dnes/zítra/pozítří se statusem planovana
   const { data: akceRows } = await supabase
     .from("akce")
     .select("id, nazev, datum")
     .eq("stav", "planovana")
     .gte("datum", todayStr)
-    .lte("datum", weekStr)
+    .lte("datum", windowStr)
 
   if (!akceRows || akceRows.length === 0) {
     return { count: 0, items: [] }
@@ -262,13 +269,14 @@ export async function getDashboardAlerts(): Promise<DashboardAlert[]> {
     }
   })
 
-  // US-1E-1: urgentní alert „Nepodepsané DPP s akcí tento týden"
-  const tyden = await getNepodepsaneDppAkceTentoTyden()
-  if (tyden.count > 0) {
+  // US-1E-1: urgentní alert „Nepodepsané DPP s akcí dnes/zítra/pozítří"
+  // User feedback 22.4.: 3denní okno (bylo 7).
+  const urgent = await getNepodepsaneDppAkceTentoTyden()
+  if (urgent.count > 0) {
     alerts.unshift({
       key: "dpp_tento_tyden",
-      count: tyden.count,
-      label: "Nepodepsaná DPP + akce tento týden",
+      count: urgent.count,
+      label: "Nepodepsaná DPP + akce dnes/zítra/pozítří",
       urgent: true,
       href: "/app/brigadnici?filter=bez_dpp",
     })
@@ -288,19 +296,35 @@ export async function getTeamSouhrn(): Promise<TeamSouhrn> {
   const weekAhead = new Date(Date.now() + 7 * 86400000)
     .toISOString()
     .slice(0, 10)
+  const sixMonthsAgo = new Date(Date.now() - 182 * 86400000)
+    .toISOString()
+    .slice(0, 10)
 
-  // Paralelně 4 counts + enriched brigadnici (pro bez_dpp parity).
+  // User feedback 22.4.:
+  //  - "zájemci v databázi" = unique pipeline.brigadnik_id kde stav ∈
+  //    {zajemce, kontaktovan, prijaty_nehotova_admin, prijaty_vse_vyreseno}.
+  //  - "aktivní brigádníci" = unique prirazeni.brigadnik_id se status='prirazeny'
+  //    JOIN akce kde akce.datum ∈ [today-6m, ∞) (min. někdy obsazen).
   const [
-    { count: aktivniBrigadnici },
+    zajemciRows,
+    aktivniRows,
     { count: akceTentoTyden },
     enrichedForDpp,
-    { count: bezDotaznikuCount },
   ] = await Promise.all([
     supabase
-      .from("brigadnici")
-      .select("id", { count: "exact", head: true })
-      .eq("aktivni", true)
-      .is("deleted_at", null),
+      .from("pipeline_entries")
+      .select("brigadnik_id")
+      .in("stav", [
+        "zajemce",
+        "kontaktovan",
+        "prijaty_nehotova_admin",
+        "prijaty_vse_vyreseno",
+      ]),
+    supabase
+      .from("prirazeni")
+      .select("brigadnik_id, akce:akce!inner(datum)")
+      .eq("status", "prirazeny")
+      .gte("akce.datum", sixMonthsAgo),
     supabase
       .from("akce")
       .select("id", { count: "exact", head: true })
@@ -308,24 +332,28 @@ export async function getTeamSouhrn(): Promise<TeamSouhrn> {
       .gte("datum", today)
       .lte("datum", weekAhead),
     getBrigadnici(),
-    supabase
-      .from("brigadnici")
-      .select("id", { count: "exact", head: true })
-      .eq("aktivni", true)
-      .is("deleted_at", null)
-      .neq("dotaznik_vyplnen", true),
   ])
 
-  const bezDppPred = buildDokumentacniPredicate("bez_dpp")
-  const bezDpp = (enrichedForDpp as EnrichedBrigadnikForFilter[]).filter(
-    bezDppPred
+  const zajemciVDatabazi = new Set(
+    (zajemciRows.data ?? []).map((r) => (r as { brigadnik_id: string }).brigadnik_id),
+  ).size
+  const aktivniBrigadnici = new Set(
+    (aktivniRows.data ?? []).map((r) => (r as { brigadnik_id: string }).brigadnik_id),
+  ).size
+
+  // bez_dpp / bez_dotazniku: sdílený predikát, jen pocet_akci > 0 (obsazení).
+  const enriched = enrichedForDpp as EnrichedBrigadnikForFilter[]
+  const bezDpp = enriched.filter(buildDokumentacniPredicate("bez_dpp")).length
+  const bezDotazniku = enriched.filter(
+    buildDokumentacniPredicate("bez_dotazniku"),
   ).length
 
   return {
-    aktivniBrigadnici: aktivniBrigadnici ?? 0,
+    zajemciVDatabazi,
+    aktivniBrigadnici,
     akceTentoTyden: akceTentoTyden ?? 0,
     bezDpp,
-    bezDotazniku: bezDotaznikuCount ?? 0,
+    bezDotazniku,
   }
 }
 

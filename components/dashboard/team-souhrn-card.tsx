@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Users, Calendar, FileText, ClipboardList } from "lucide-react"
+import { Users, Calendar, FileText, ClipboardList, UserPlus } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -27,6 +27,12 @@ interface Tile {
 
 export function TeamSouhrnCard({ data, className }: Props) {
   const tiles: Tile[] = [
+    {
+      label: "Zájemci v databázi",
+      value: data.zajemciVDatabazi,
+      icon: UserPlus,
+      href: "/app/brigadnici",
+    },
     {
       label: "Aktivní brigádníci",
       value: data.aktivniBrigadnici,
@@ -61,7 +67,7 @@ export function TeamSouhrnCard({ data, className }: Props) {
         <CardTitle>Team souhrn</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {tiles.map((t) => {
             const Icon = t.icon
             return (
