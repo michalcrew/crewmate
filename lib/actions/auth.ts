@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { sanitizeError } from "@/lib/utils/error-sanitizer"
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -15,7 +16,8 @@ export async function login(formData: FormData) {
   })
 
   if (error) {
-    return { error: error.message }
+    // MD-12: neexposovat raw supabase auth error (password patterns, email syntax).
+    return { error: sanitizeError(error, "login") }
   }
 
   redirect("/app")
