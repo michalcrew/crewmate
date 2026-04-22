@@ -43,7 +43,21 @@ export async function getCurrentUserRole() {
     .eq("auth_user_id", user.id)
     .single()
 
-  return data?.role ?? null
+  if (data?.role) return data.role
+
+  // MD-1 fallback: pokud RLS SELECT vrátí null (edge case se stale session
+  // cookies nebo race při auth rehydrataci), role by byla null a admin by
+  // byl mylně považován za non-admin. Admin client fallback pattern z
+  // getUsers() + updateUserPodpis() — auth check proběhl výš (user != null),
+  // takže je bezpečné použít service role pro self-lookup podle auth_user_id.
+  const admin = createAdminClient()
+  const { data: fallback } = await admin
+    .from("users")
+    .select("role")
+    .eq("auth_user_id", user.id)
+    .single()
+
+  return (fallback as { role?: string } | null)?.role ?? null
 }
 
 const createUserSchema = z.object({
