@@ -32,6 +32,7 @@ export default async function BrigadniciPage({
     typ?: string
     stav?: string
     filter?: string
+    blokovani?: string
   }>
 }) {
   const params = await searchParams
@@ -48,11 +49,15 @@ export default async function BrigadniciPage({
   const filterParsed = AlertFilterKeySchema.safeParse(params.filter)
   const filterKey = filterParsed.success ? filterParsed.data : undefined
 
+  // F-0021a — default: blokovaní skryti; toggle ?blokovani=1 je zobrazí
+  const zahrnoutBlokovane = params.blokovani === "1"
+
   const brigadnici = await getBrigadnici({
     search: params.q,
     typFilter,
     stavFilter: stavFilter.length > 0 ? stavFilter : undefined,
     filterKey,
+    zahrnoutBlokovane,
   })
 
   const filterLabel = filterKey ? FILTER_KEY_LABELS[filterKey] : null
