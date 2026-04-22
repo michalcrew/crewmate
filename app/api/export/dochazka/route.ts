@@ -10,19 +10,20 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  // Role check: admin nebo naborar
-  const { data: internalUser } = await supabase
+  // Role check: admin nebo naborar. Admin client fallback — pattern z MD-1
+  // (getCurrentUserRole). RLS na `users` table může vrátit null i pro
+  // legitimního přihlášeného usera (edge case stale session / race).
+  const admin = createAdminClient()
+  const { data: internalUser } = await admin
     .from("users")
     .select("role")
     .eq("auth_user_id", user.id)
     .single()
-  if (!internalUser || !["admin", "naborar"].includes(internalUser.role)) {
+  if (!internalUser || !["admin", "naborar"].includes((internalUser as { role: string }).role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
   const mesic = request.nextUrl.searchParams.get("mesic") // optional YYYY-MM
-
-  const admin = createAdminClient()
 
   // Build query
   let query = admin
