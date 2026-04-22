@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { z } from "zod"
 import { sanitizePodpis } from "@/lib/utils/podpis-sanitize"
+import { sanitizeError } from "@/lib/utils/error-sanitizer"
 import { updateUserPodpisSchema } from "@/lib/schemas/dotaznik"
 
 export async function getUsers() {
@@ -90,7 +91,7 @@ export async function createUser(formData: FormData) {
     email_confirm: true,
   })
 
-  if (authError) return { error: authError.message }
+  if (authError) return { error: sanitizeError(authError, "createUser.auth") }
   if (!authUser.user) return { error: "Nepodařilo se vytvořit účet" }
 
   // Create public.users record
@@ -102,7 +103,7 @@ export async function createUser(formData: FormData) {
     role: parsed.data.role,
   })
 
-  if (insertError) return { error: insertError.message }
+  if (insertError) return { error: sanitizeError(insertError, "createUser.insert") }
 
   revalidatePath("/app/nastaveni")
   return { success: true }
@@ -149,7 +150,7 @@ export async function updateUserPodpis(
     })
     .eq("id", internalUser.id)
 
-  if (error) return { error: error.message }
+  if (error) return { error: sanitizeError(error, "updateUserPodpis") }
 
   if (sanitized.hadInjection) {
     const admin = createAdminClient()
@@ -242,7 +243,7 @@ export async function updateUserSazba(
     .update({ sazba_kc_hod: parsed.data })
     .eq("id", userId)
 
-  if (error) return { error: error.message }
+  if (error) return { error: sanitizeError(error, "updateUserSazba") }
 
   // Actor = internal user id
   const { data: actor } = await admin
@@ -321,7 +322,7 @@ export async function toggleUserActive(userId: string, aktivni: boolean) {
     .update({ aktivni })
     .eq("id", userId)
 
-  if (error) return { error: error.message }
+  if (error) return { error: sanitizeError(error, "toggleUserActive") }
 
   revalidatePath("/app/nastaveni")
   return { success: true }
