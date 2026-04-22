@@ -21,12 +21,22 @@ function loadFontBuffer(filename: string): Buffer {
 let fontRegistered = false
 function ensureFontRegistered() {
   if (fontRegistered) return
+  // LG-4 instrumentace: font load + register je podezřelý z bottlenecku
+  // (~1.1 MB TTF, Font.register parsuje glyph tables).
+  const fontLabel = `DPP:font:register:${Date.now().toString(36)}`
+  console.time(fontLabel)
   try {
+    const regular = loadFontBuffer("NotoSans-Regular.ttf")
+    const bold = loadFontBuffer("NotoSans-Bold.ttf")
+    console.log("[LG-4] font buffers loaded", {
+      regular_bytes: regular.length,
+      bold_bytes: bold.length,
+    })
     Font.register({
       family: "NotoSans",
       fonts: [
-        { src: loadFontBuffer("NotoSans-Regular.ttf") as unknown as string, fontWeight: "normal" },
-        { src: loadFontBuffer("NotoSans-Bold.ttf") as unknown as string, fontWeight: "bold" },
+        { src: regular as unknown as string, fontWeight: "normal" },
+        { src: bold as unknown as string, fontWeight: "bold" },
       ],
     })
     fontRegistered = true
@@ -36,6 +46,7 @@ function ensureFontRegistered() {
     // (diakritika opět prázdná, ale alespoň nepadá serverless)
     fontRegistered = true // prevent retry loop
   }
+  console.timeEnd(fontLabel)
 }
 
 const styles = StyleSheet.create({
@@ -363,7 +374,12 @@ function DppDocument({ data }: { data: DppData }) {
 }
 
 export async function generateDppPdf(data: DppData): Promise<Buffer> {
+  // LG-4 instrumentace: rozdělit font register od renderToBuffer,
+  // aby se v Vercel logs dalo ukázat kolik času zabírá každý krok.
+  const renderLabel = `DPP:render:${Date.now().toString(36)}`
+  console.time(renderLabel)
   ensureFontRegistered()
   const buffer = await renderToBuffer(<DppDocument data={data} />)
+  console.timeEnd(renderLabel)
   return Buffer.from(buffer)
 }

@@ -248,21 +248,40 @@ export async function generateProhlaseni(brigadnikId: string, rok: number) {
 }
 
 export async function sendDppEmail(brigadnikId: string, rok: number) {
+  // LG-4 instrumentace: měřit jednotlivé kroky, najít root cause 503.
+  // Vercel logs zobrazí timing per-step; agregace přes `console.time` label.
+  const traceId = `DPP:${brigadnikId.slice(0, 8)}:${Date.now().toString(36)}`
+  console.time(`${traceId}:total`)
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: "Nepřihlášen" }
+  if (!user) {
+    console.timeEnd(`${traceId}:total`)
+    return { error: "Nepřihlášen" }
+  }
 
   const adminClient = createAdminClient()
 
+  console.time(`${traceId}:db:select-brigadnik`)
   const { data: brigadnik } = await adminClient
     .from("brigadnici")
     .select("*")
     .eq("id", brigadnikId)
     .single()
+  console.timeEnd(`${traceId}:db:select-brigadnik`)
 
-  if (!brigadnik) return { error: "Brigádník nenalezen" }
-  if (brigadnik.typ_brigadnika === "osvc") return { error: "OSVČ nedostávají DPP" }
-  if (!brigadnik.dotaznik_vyplnen) return { error: "Brigádník nemá vyplněný dotazník — nelze generovat DPP" }
+  if (!brigadnik) {
+    console.timeEnd(`${traceId}:total`)
+    return { error: "Brigádník nenalezen" }
+  }
+  if (brigadnik.typ_brigadnika === "osvc") {
+    console.timeEnd(`${traceId}:total`)
+    return { error: "OSVČ nedostávají DPP" }
+  }
+  if (!brigadnik.dotaznik_vyplnen) {
+    console.timeEnd(`${traceId}:total`)
+    return { error: "Brigádník nemá vyplněný dotazník — nelze generovat DPP" }
+  }
 
   const rokLabel = rokToLabel(rok)
 
@@ -271,13 +290,16 @@ export async function sendDppEmail(brigadnikId: string, rok: number) {
   try { if (brigadnik.rodne_cislo) rodne_cislo = decrypt(brigadnik.rodne_cislo) } catch { rodne_cislo = brigadnik.rodne_cislo ?? "" }
   try { if (brigadnik.cislo_op) cislo_op = decrypt(brigadnik.cislo_op) } catch { cislo_op = brigadnik.cislo_op ?? "" }
 
+  console.time(`${traceId}:pdf:import`)
   const { generateDppPdf } = await import("@/lib/pdf/generate-dpp-pdf")
+  console.timeEnd(`${traceId}:pdf:import`)
   const trvaleBydliste =
     brigadnik.adresa ??
     [brigadnik.ulice_cp, brigadnik.psc, brigadnik.mesto_bydliste, brigadnik.zeme]
       .filter(Boolean)
       .join(", ")
 
+  console.time(`${traceId}:pdf:generate`)
   const pdfBuffer = await generateDppPdf({
     jmeno: brigadnik.jmeno,
     prijmeni: brigadnik.prijmeni,
@@ -298,6 +320,8 @@ export async function sendDppEmail(brigadnikId: string, rok: number) {
     rok,
     datum_podpisu: new Date().toLocaleDateString("cs-CZ"),
   })
+  console.timeEnd(`${traceId}:pdf:generate`)
+  console.log(`${traceId}:pdf:size`, pdfBuffer.length, "bytes")
 
   const pdfFilename = `DPP_${brigadnik.prijmeni}_${brigadnik.jmeno}_${rok}.pdf`
 
@@ -328,6 +352,7 @@ export async function sendDppEmail(brigadnikId: string, rok: number) {
     </div>
   `
 
+  console.time(`${traceId}:gmail:send`)
   try {
     await sendGmailMessage({
       to: brigadnik.email,
@@ -340,10 +365,14 @@ export async function sendDppEmail(brigadnikId: string, rok: number) {
       }],
     })
   } catch (err) {
-    console.error("DPP email error:", err)
+    console.timeEnd(`${traceId}:gmail:send`)
+    console.timeEnd(`${traceId}:total`)
+    console.error(`${traceId}:gmail:error`, err)
     return { error: "Nepodařilo se odeslat email" }
   }
+  console.timeEnd(`${traceId}:gmail:send`)
 
+  console.time(`${traceId}:db:persist`)
   const smluvniStav = await getOrCreateSmluvniStav(brigadnikId, rok)
   await updateDppStav(smluvniStav.id, brigadnikId, "odeslano")
 
@@ -354,10 +383,12 @@ export async function sendDppEmail(brigadnikId: string, rok: number) {
     user_id: internalUser?.id,
     typ: "email_odeslan",
     popis: `DPP odeslána emailem s PDF přílohou na ${brigadnik.email} (${rokLabel})`,
-    metadata: { rok },
+    metadata: { rok, trace: traceId, pdf_size: pdfBuffer.length },
   })
+  console.timeEnd(`${traceId}:db:persist`)
 
   revalidatePath(`/app/brigadnici/${brigadnikId}`)
+  console.timeEnd(`${traceId}:total`)
   return { success: true }
 }
 
