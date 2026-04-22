@@ -118,13 +118,17 @@ export function AkceStavSelector({
     })
   }
 
+  // Base UI Select.Value bez render fn vypisuje raw value ('planovana').
+  // Mapujeme přes STAV_LABELS na lidský label ('Plánovaná').
+  const renderLabel = (value: unknown) => STAV_LABELS[String(value)] ?? String(value)
+
   // zrušená: disabled select s tooltipem
   if (isZrusena) {
     return (
       <div className={className} title="Zrušenou akci nelze obnovit (out of scope)">
         <Select disabled value="zrusena">
           <SelectTrigger size={size === "sm" ? "sm" : "default"} aria-label="Stav akce">
-            <SelectValue />
+            <SelectValue>{renderLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="zrusena">Zrušená</SelectItem>
@@ -139,7 +143,7 @@ export function AkceStavSelector({
       <div className={`flex items-center gap-2 ${className ?? ""}`}>
         <Select value={currentStav} onValueChange={handleChange} disabled={isPending}>
           <SelectTrigger size={size === "sm" ? "sm" : "default"} aria-label="Změnit stav akce">
-            <SelectValue />
+            <SelectValue>{renderLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="planovana">Plánovaná</SelectItem>
