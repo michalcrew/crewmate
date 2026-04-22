@@ -32,6 +32,8 @@ import { SendDotaznikButton } from "@/components/brigadnici/send-dotaznik-button
 import { GenerateDppButton, GenerateProhlaseniButton, SendDppButton, UploadPodpisForm } from "@/components/brigadnici/dpp-actions"
 import { UpravitBrigadnikaDialog } from "@/components/brigadnici/upravit-brigadnika-dialog"
 import { BlokaceActions, BlokovanBadge } from "@/components/brigadnici/blokace-actions"
+import { GdprErasureDialog } from "@/components/brigadnici/gdpr-erasure-dialog"
+import { getCurrentUserRole } from "@/lib/actions/users"
 import { BrigadnikAkceSekce } from "@/components/brigadnici/brigadnik-akce-sekce"
 import { HodnoceniList, type HodnoceniItem } from "@/components/brigadnici/hodnoceni-list"
 import { PridatHodnoceniDialog } from "@/components/brigadnici/pridat-hodnoceni-dialog"
@@ -72,7 +74,7 @@ export default async function BrigadnikDetailPage({
   const brigadnik = await getBrigadnikById(id)
   if (!brigadnik) notFound()
 
-  const [pipeline, smluvniStav, historie, zkusenosti, emailData, komunikaceTimeline, hodnoceniData, akceOptions] = await Promise.all([
+  const [pipeline, smluvniStav, historie, zkusenosti, emailData, komunikaceTimeline, hodnoceniData, akceOptions, userRole] = await Promise.all([
     getBrigadnikPipeline(id),
     getBrigadnikSmluvniStav(id),
     getBrigadnikHistorie(id),
@@ -81,7 +83,9 @@ export default async function BrigadnikDetailPage({
     getKomunikaceTimeline(id, { limit: 100 }),
     getHodnoceniByBrigadnik(id),
     loadAkceOptions(),
+    getCurrentUserRole(),
   ])
+  const isAdmin = userRole === "admin"
 
   const hodnoceniItems = hodnoceniData as unknown as HodnoceniItem[]
   const hodnoceniPrumer =
@@ -142,6 +146,13 @@ export default async function BrigadnikDetailPage({
             zablokovanAt={brigadnik.zablokovan_at ?? null}
             zablokovanDuvod={brigadnik.zablokovan_duvod ?? null}
           />
+          {isAdmin && (
+            <GdprErasureDialog
+              brigadnikId={brigadnik.id}
+              erasureRequestedAt={brigadnik.erasure_requested_at ?? null}
+              anonymizovanAt={brigadnik.anonymizovan_at ?? null}
+            />
+          )}
           {!brigadnik.dotaznik_vyplnen && (
             <SendDotaznikButton brigadnikId={brigadnik.id} brigadnikEmail={brigadnik.email} />
           )}
