@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { maybeEncryptDic, encrypt } from "@/lib/utils/crypto"
+import { sanitizeError } from "@/lib/utils/error-sanitizer"
 import { z } from "zod"
 import {
   updateBrigadnikTypSchema,
@@ -373,7 +374,7 @@ export async function updateBrigadnik(id: string, formData: FormData) {
     .update(update)
     .eq("id", id)
 
-  if (error) return { error: error.message }
+  if (error) return { error: sanitizeError(error, "updateBrigadnik") }
 
   // Audit log: D-F0013-15 single entry per call
   const { data: internalUser } = await supabase
