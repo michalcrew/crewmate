@@ -28,6 +28,13 @@ type Brigadnik = {
   email: string
   telefon: string
   typ_brigadnika: "brigadnik" | "osvc" | null
+  // MD-3: osobní údaje pro DPP — admin je musí moct opravit pokud brigádník
+  // zadal špatně v dotazníku.
+  datum_narozeni: string | null
+  misto_narozeni: string | null
+  rodne_jmeno: string | null
+  rodne_prijmeni: string | null
+  korespondencni_adresa: string | null
   ulice_cp: string | null
   psc: string | null
   mesto_bydliste: string | null
@@ -136,6 +143,50 @@ export function UpravitBrigadnikaDialog({ brigadnik }: Props) {
             </div>
           </section>
 
+          {/* --- Osobní údaje (MD-3) --- */}
+          {/* Bez RČ/OP — ty mají samostatnou šifrovanou sekci níže. Tady jsou */}
+          {/* pole z DPP která mohla být v dotazníku zadána špatně. */}
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold">Osobní údaje</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="ub-datum-narozeni">Datum narození</Label>
+                <Input
+                  id="ub-datum-narozeni"
+                  name="datum_narozeni"
+                  type="date"
+                  defaultValue={brigadnik.datum_narozeni ?? ""}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="ub-misto-narozeni">Místo narození</Label>
+                <Input
+                  id="ub-misto-narozeni"
+                  name="misto_narozeni"
+                  defaultValue={brigadnik.misto_narozeni ?? ""}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="ub-rodne-jmeno">Rodné jméno</Label>
+                <Input
+                  id="ub-rodne-jmeno"
+                  name="rodne_jmeno"
+                  defaultValue={brigadnik.rodne_jmeno ?? ""}
+                  placeholder="Pokud se liší od současného"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="ub-rodne-prijmeni">Rodné příjmení</Label>
+                <Input
+                  id="ub-rodne-prijmeni"
+                  name="rodne_prijmeni"
+                  defaultValue={brigadnik.rodne_prijmeni ?? ""}
+                  placeholder="Pokud se liší od současného"
+                />
+              </div>
+            </div>
+          </section>
+
           {/* --- Adresa --- */}
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Adresa</h3>
@@ -159,6 +210,16 @@ export function UpravitBrigadnikaDialog({ brigadnik }: Props) {
               <div className="space-y-1">
                 <Label htmlFor="ub-narodnost">Národnost</Label>
                 <Input id="ub-narodnost" name="narodnost" defaultValue={brigadnik.narodnost ?? "Česká"} />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label htmlFor="ub-kor-adresa">Korespondenční adresa</Label>
+                <Textarea
+                  id="ub-kor-adresa"
+                  name="korespondencni_adresa"
+                  defaultValue={brigadnik.korespondencni_adresa ?? ""}
+                  rows={2}
+                  placeholder="Pokud se liší od trvalé adresy"
+                />
               </div>
             </div>
           </section>
@@ -204,7 +265,7 @@ export function UpravitBrigadnikaDialog({ brigadnik }: Props) {
               </label>
             </div>
             <p className="text-xs text-muted-foreground">
-              Změna typu je admin operace — proveď ji přes samostatné tlačítko „Změnit typ".
+              Typ lze změnit pouze na úrovni DB / přes správce. V dialogu je zobrazen pouze pro orientaci.
             </p>
           </section>
 
