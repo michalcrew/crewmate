@@ -17,7 +17,7 @@ export const ALERT_FILTER_KEYS = [
   "bez_dpp",
   "bez_prohlaseni",
   "bez_dotazniku",
-  "osvc_bez_ico",
+  "osvc",
 ] as const
 
 export type AlertFilterKey = (typeof ALERT_FILTER_KEYS)[number]
@@ -56,7 +56,7 @@ export interface EnrichedBrigadnikForFilter {
  *  - `bez_dotazniku`: dotaznik_vyplnen != true AND **pocet_akci > 0**
  *    (stejné odůvodnění jako bez_dpp — zájemci v pipeline bez přiřazení
  *    nevyplněný dotazník netrápí).
- *  - `osvc_bez_ico`: typ_brigadnika = 'osvc' AND (osvc_ico IS NULL OR '').
+ *  - `osvc`: typ_brigadnika = 'osvc' (všichni fakturanti, bez ohledu na IČO).
  */
 export function buildDokumentacniPredicate(
   key: AlertFilterKey,
@@ -81,12 +81,8 @@ export function buildDokumentacniPredicate(
         if ((b.pocet_akci ?? 0) === 0) return false
         return b.dotaznik_vyplnen !== true
       }
-    case "osvc_bez_ico":
-      return (b) => {
-        if (b.typ_brigadnika !== "osvc") return false
-        const ico = (b.osvc_ico ?? "").trim()
-        return ico.length === 0
-      }
+    case "osvc":
+      return (b) => b.typ_brigadnika === "osvc"
   }
 }
 
@@ -94,5 +90,5 @@ export const FILTER_KEY_LABELS: Record<AlertFilterKey, string> = {
   bez_dpp: "Bez DPP",
   bez_prohlaseni: "Bez prohlášení",
   bez_dotazniku: "Bez dotazníku",
-  osvc_bez_ico: "OSVČ bez IČO",
+  osvc: "OSVČ",
 }

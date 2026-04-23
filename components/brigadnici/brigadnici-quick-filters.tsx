@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils"
 /**
  * F-0017 US-1B-1 — segmented chips pro rychlé preset filtry.
  *
- * URL query param `?filter=bez_dpp|bez_prohlaseni|bez_dotazniku|osvc_bez_ico`.
+ * URL query param `?filter=bez_dpp|bez_prohlaseni|bez_dotazniku|osvc`.
  * Koexistuje s existujícími `?q=&typ=&stav=` (AND sémantika, BE-side v getBrigadnici).
  */
 
