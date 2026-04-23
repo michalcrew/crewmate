@@ -18,7 +18,10 @@ const nabidkaCoreSchema = z.object({
   misto: z.string().optional(),
   datum_od: z.string().optional(),
   datum_do: z.string().optional(),
-  pocet_lidi: z.coerce.number().int().positive().optional(),
+  pocet_lidi: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
   slug: z.string().optional(),
   publikovano: z.boolean().optional(),
   koho_hledame: z.string().optional(),
@@ -31,7 +34,10 @@ const createJednodenniSchema = nabidkaCoreSchema.extend({
   akce_misto: z.string().optional(),
   akce_cas_od: z.string().optional(),
   akce_cas_do: z.string().optional(),
-  akce_pocet_lidi: z.coerce.number().int().positive().optional(),
+  akce_pocet_lidi: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
 })
 
 const createOpakovanaSchema = nabidkaCoreSchema.extend({

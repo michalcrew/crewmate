@@ -26,7 +26,10 @@ const akceSchema = z.object({
   cas_do: z.string().optional(),
   klient: z.string().optional(),
   nabidka_id: z.string().optional(),
-  pocet_lidi: z.coerce.number().int().positive().optional(),
+  pocet_lidi: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
   poznamky: z.string().optional(),
 })
 
@@ -37,7 +40,10 @@ const stavFilterEnum = z.enum(["planovana", "probehla", "zrusena", "all"])
 // F-0015 — Allowlist pro updateAkce na probehla (D-05)
 const probehlaAllowlist = z.object({
   poznamky: z.string().optional(),
-  pocet_lidi: z.coerce.number().int().positive().optional(),
+  pocet_lidi: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
 })
 
 // F-0015 — plný update schema pro planovana
@@ -48,7 +54,10 @@ const updateAkceFullSchema = z.object({
   cas_od: z.string().optional(),
   cas_do: z.string().optional(),
   klient: z.string().optional(),
-  pocet_lidi: z.coerce.number().int().positive().optional(),
+  pocet_lidi: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
   poznamky: z.string().optional(),
 })
 
