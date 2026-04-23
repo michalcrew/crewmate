@@ -39,6 +39,7 @@ import { BrigadnikAkceSekce } from "@/components/brigadnici/brigadnik-akce-sekce
 import { HodnoceniList, type HodnoceniItem } from "@/components/brigadnici/hodnoceni-list"
 import { PridatHodnoceniDialog } from "@/components/brigadnici/pridat-hodnoceni-dialog"
 import { FakturantBadge } from "@/components/brigadnici/fakturant-badge"
+import { BrigadnikFotoAvatar } from "@/components/brigadnici/brigadnik-foto-avatar"
 import { StarRating } from "@/components/ui/star-rating"
 import { BrigadnikEmailTab } from "@/components/email/brigadnik-email-tab"
 import { getThreads, getKomunikaceTimeline } from "@/lib/actions/email"
@@ -131,11 +132,11 @@ export default async function BrigadnikDetailPage({
             <ArrowLeft className="h-4 w-4" /><span className="sr-only">Zpět</span>
           </Button>
         </Link>
-        {fotoSignedUrl && (
-          <div className="h-12 w-12 rounded-full overflow-hidden bg-muted shrink-0">
-            <img src={fotoSignedUrl} alt={`${brigadnik.jmeno} ${brigadnik.prijmeni}`} className="h-full w-full object-cover" />
-          </div>
-        )}
+        <BrigadnikFotoAvatar
+          brigadnikId={brigadnik.id}
+          url={fotoSignedUrl}
+          alt={`${brigadnik.jmeno} ${brigadnik.prijmeni}`}
+        />
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-semibold">
@@ -249,6 +250,34 @@ export default async function BrigadnikDetailPage({
               <CardHeader><CardTitle>Poznámky</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-sm whitespace-pre-wrap">{brigadnik.poznamky}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {cvSignedUrl && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Životopis (CV)</CardTitle>
+                <a href={cvSignedUrl} target="_blank" rel="noopener noreferrer">
+                  <Button variant="outline" size="sm">
+                    <FileText className="h-3.5 w-3.5 mr-1.5" />
+                    Otevřít v novém tabu
+                  </Button>
+                </a>
+              </CardHeader>
+              <CardContent>
+                {brigadnik.cv_url?.toLowerCase().endsWith(".pdf") ? (
+                  <iframe
+                    src={cvSignedUrl}
+                    className="w-full h-[600px] rounded border bg-muted"
+                    title={`CV — ${brigadnik.jmeno} ${brigadnik.prijmeni}`}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    CV je ve formátu {brigadnik.cv_url?.split(".").pop()?.toUpperCase() ?? "DOC"} —
+                    náhled nelze zobrazit, klikni na &bdquo;Otevřít v novém tabu&ldquo;.
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
