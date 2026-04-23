@@ -1037,3 +1037,94 @@ export async function odblokovatBrigadnika(
   revalidatePath("/app/brigadnici")
   return { success: true }
 }
+
+/**
+ * Upload fotografie brigádníka adminem/náborářkou.
+ *
+ * - Auth + role check (admin / naborar)
+ * - Validace typu (JPG/PNG/HEIC) + velikosti (<=20 MB)
+ * - Upload do crewmate-storage pod 'prihlasky/{id}/foto/{uuid}_foto.{ext}'
+ *   (konzistentní s submitPrihlaska path)
+ * - Update brigadnici.foto_url na novou cestu
+ * - Historie záznam 'foto_upload'
+ */
+export async function uploadBrigadnikFoto(
+  brigadnikId: string,
+  formData: FormData,
+): Promise<{ success: true } | { error: string }> {
+  const { isAllowedPhotoType, MAX_FILE_SIZE } = await import("@/lib/utils/sanitize")
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const admin = createAdminClient()
+  let internalUser: { id: string; role: string } | null = null
+  {
+    const { data: viaSession } = await supabase
+      .from("users")
+      .select("id, role")
+      .eq("auth_user_id", user.id)
+      .single()
+    if (viaSession) internalUser = viaSession as { id: string; role: string }
+    else {
+      const { data: viaAdmin } = await admin
+        .from("users")
+        .select("id, role")
+        .eq("auth_user_id", user.id)
+        .single()
+      if (viaAdmin) internalUser = viaAdmin as { id: string; role: string }
+    }
+  }
+  if (!internalUser || !["admin", "naborar"].includes(internalUser.role)) {
+    return { error: "Nemáte oprávnění" }
+  }
+
+  const file = formData.get("foto") as File | null
+  if (!file || !(file instanceof File) || file.size === 0) {
+    return { error: "Nebyl přiložen žádný soubor" }
+  }
+  if (file.size > MAX_FILE_SIZE) {
+    return { error: "Soubor je příliš velký (max 20 MB)" }
+  }
+  if (!isAllowedPhotoType(file.type)) {
+    return { error: "Nepodporovaný formát. Povolené: JPG, PNG, HEIC." }
+  }
+
+  const { data: existing } = await admin
+    .from("brigadnici")
+    .select("id")
+    .eq("id", brigadnikId)
+    .single()
+  if (!existing) return { error: "Brigádník nenalezen" }
+
+  const ext = file.name.split(".").pop() ?? "jpg"
+  const uniqueId = crypto.randomUUID().slice(0, 8)
+  const path = `prihlasky/${brigadnikId}/foto/${uniqueId}_foto.${ext}`
+  const buffer = Buffer.from(await file.arrayBuffer())
+
+  const { error: uploadError } = await admin.storage
+    .from("crewmate-storage")
+    .upload(path, buffer, { contentType: file.type, upsert: true })
+  if (uploadError) {
+    return { error: "Upload selhal: " + uploadError.message }
+  }
+
+  const { error: updateError } = await admin
+    .from("brigadnici")
+    .update({ foto_url: path })
+    .eq("id", brigadnikId)
+  if (updateError) {
+    return { error: "Nepodařilo se uložit odkaz na foto" }
+  }
+
+  await admin.from("historie").insert({
+    brigadnik_id: brigadnikId,
+    user_id: internalUser.id,
+    typ: "foto_upload",
+    popis: "Nahrána fotografie brigádníka",
+  })
+
+  revalidatePath(`/app/brigadnici/${brigadnikId}`)
+  return { success: true }
+}
