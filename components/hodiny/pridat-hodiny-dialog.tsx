@@ -19,12 +19,18 @@ interface Props {
   defaultOpen?: boolean
 }
 
+// UI typ: 'jina_firma' = externí zakázka mimo náš systém; v submit se mapuje
+// na typ_zaznamu='ostatni' s prefixem v napln_prace (viz server action).
+type RowTyp = TypZaznamu | "jina_firma"
+
 type RowState = {
   key: string
-  typ: TypZaznamu
+  typ: RowTyp
   nabidka_id: string
   nabidka_query: string
   trvani: string
+  firma_nazev: string
+  firma_pozice: string
 }
 
 const emptyRow = (): RowState => ({
@@ -33,6 +39,8 @@ const emptyRow = (): RowState => ({
   nabidka_id: "",
   nabidka_query: "",
   trvani: "",
+  firma_nazev: "",
+  firma_pozice: "",
 })
 
 /**
@@ -66,18 +74,19 @@ export function PridatHodinyDialog({ datum, aktivniNabidky, onSuccess, trigger, 
     return parseMinutes(r.trvani)
   }
 
-  // Pro submit filter — musí mít zakázku (nebo Ostatní) i platné trvání.
+  // Pro submit filter — musí mít zakázku (Zakázka) / firmu (Jiná firma) + platné trvání.
   function isRowSubmittable(r: RowState): boolean {
     const min = rowMinutes(r)
     if (min === null || min <= 0) return false
     if (r.typ === "nabidka") return !!r.nabidka_id
+    if (r.typ === "jina_firma") return !!r.firma_nazev.trim()
     return true
   }
 
   // Pro progressive disclosure — stačí jakýkoliv meaningful input.
-  // Tj. vybraná zakázka NEBO platné trvání NEBO explicit Ostatní+trvání.
   function hasAnyInput(r: RowState): boolean {
     if (r.typ === "nabidka" && r.nabidka_id) return true
+    if (r.typ === "jina_firma" && r.firma_nazev.trim()) return true
     const min = rowMinutes(r)
     if (min !== null && min > 0) return true
     return false
@@ -139,11 +148,24 @@ export function PridatHodinyDialog({ datum, aktivniNabidky, onSuccess, trigger, 
       return
     }
 
-    const payload = filledRows.map(r => ({
-      typ_zaznamu: r.typ,
-      nabidka_id: r.typ === "nabidka" ? r.nabidka_id : null,
-      trvani_minut: rowMinutes(r) as number,
-    }))
+    const payload = filledRows.map(r => {
+      // "Jiná firma" UI typ → server: typ='ostatni' + firma_nazev/firma_pozice
+      // (server je prefixne do napln_prace).
+      if (r.typ === "jina_firma") {
+        return {
+          typ_zaznamu: "ostatni" as const,
+          nabidka_id: null,
+          trvani_minut: rowMinutes(r) as number,
+          firma_nazev: r.firma_nazev.trim(),
+          firma_pozice: r.firma_pozice.trim() || undefined,
+        }
+      }
+      return {
+        typ_zaznamu: r.typ,
+        nabidka_id: r.typ === "nabidka" ? r.nabidka_id : null,
+        trvani_minut: rowMinutes(r) as number,
+      }
+    })
 
     setPending(true)
     const result = await addHodinyBulk({
@@ -308,20 +330,27 @@ function RowEditor({
   return (
     <div className={`rounded-lg border p-3 space-y-2 ${isLast ? "border-dashed" : ""}`}>
       <div className="flex items-center justify-between gap-2">
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           <button
             type="button"
-            onClick={() => onChange({ typ: "nabidka" })}
+            onClick={() => onChange({ typ: "nabidka", firma_nazev: "", firma_pozice: "" })}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${row.typ === "nabidka" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
           >
             Zakázka
           </button>
           <button
             type="button"
-            onClick={() => onChange({ typ: "ostatni", nabidka_id: "", nabidka_query: "" })}
+            onClick={() => onChange({ typ: "ostatni", nabidka_id: "", nabidka_query: "", firma_nazev: "", firma_pozice: "" })}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${row.typ === "ostatni" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
           >
             Ostatní
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ typ: "jina_firma", nabidka_id: "", nabidka_query: "" })}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${row.typ === "jina_firma" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+          >
+            Jiná firma
           </button>
         </div>
         {onRemove && (
@@ -336,9 +365,9 @@ function RowEditor({
         )}
       </div>
 
-      {/* Zakázka / Ostatní — full width (ne-squeezed) */}
+      {/* Hlavní obsah dle typ: Zakázka picker / Ostatní stub / Jiná firma 2 inputy */}
       <div>
-        {row.typ === "nabidka" ? (
+        {row.typ === "nabidka" && (
           selectedNabidka ? (
             <div className="flex items-center justify-between rounded-md border border-input bg-background px-3 py-2">
               <span className="text-sm font-medium truncate">{selectedNabidka.nazev}</span>
@@ -375,9 +404,28 @@ function RowEditor({
               )}
             </div>
           )
-        ) : (
+        )}
+
+        {row.typ === "ostatni" && (
           <div className="rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-            Ostatní (bez zakázky)
+            Ostatní (bez zakázky — admin, porady, školení…)
+          </div>
+        )}
+
+        {row.typ === "jina_firma" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <Input
+              placeholder="Název firmy (např. Kofola)"
+              value={row.firma_nazev}
+              onChange={(e) => onChange({ firma_nazev: e.target.value })}
+              aria-label="Název firmy"
+            />
+            <Input
+              placeholder="Pozice (volitelné, např. DJ)"
+              value={row.firma_pozice}
+              onChange={(e) => onChange({ firma_pozice: e.target.value })}
+              aria-label="Pozice u jiné firmy"
+            />
           </div>
         )}
       </div>
