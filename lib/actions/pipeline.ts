@@ -48,9 +48,31 @@ export async function updatePipelineStav(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
+  // Resolve internal user (MD-1 admin-client fallback pro stale RLS session).
+  const admin = createAdminClient()
+  let internalUserId: string | null = null
+  {
+    const { data: serverUser } = await supabase
+      .from("users")
+      .select("id, role")
+      .eq("auth_user_id", user.id)
+      .single()
+    if (serverUser) internalUserId = (serverUser as { id: string }).id
+    else {
+      const { data: adminUser } = await admin
+        .from("users")
+        .select("id, role")
+        .eq("auth_user_id", user.id)
+        .single()
+      internalUserId = (adminUser as { id: string } | null)?.id ?? null
+    }
+  }
+
+  // Owner transfer: naborar_id = aktuální user. "Kdo přetáhl, ten vlastní."
+  // Admin drag také přepisuje — edge case řešíme až bude vysvětlení potřeba.
   const { error } = await supabase
     .from("pipeline_entries")
-    .update({ stav })
+    .update({ stav, naborar_id: internalUserId })
     .eq("id", entryId)
 
   if (error) return { error: error.message }
@@ -63,16 +85,10 @@ export async function updatePipelineStav(
     .single()
 
   if (entry) {
-    const { data: internalUser } = await supabase
-      .from("users")
-      .select("id")
-      .eq("auth_user_id", user.id)
-      .single()
-
     await supabase.from("historie").insert({
       brigadnik_id: entry.brigadnik_id,
       nabidka_id: nabidkaId,
-      user_id: internalUser?.id,
+      user_id: internalUserId,
       typ: "pipeline_zmena",
       popis: `Stav změněn na: ${stav}`,
     })
