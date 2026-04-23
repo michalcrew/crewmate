@@ -538,17 +538,31 @@ export async function getAkceDochazkaForAdmin(akceId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" as const }
 
-  // Role check
-  const { data: internalUser } = await supabase
-    .from("users")
-    .select("id, role")
-    .eq("auth_user_id", user.id)
-    .single()
+  const admin = createAdminClient()
+
+  // Role check — MD-1 fallback pattern: RLS může při stale session vrátit null
+  // pro vlastní users řádek → naborářka by skončila na redirect. Zkusíme
+  // user-session client a pak admin client jako fallback.
+  let internalUser: { id: string; role: string } | null = null
+  {
+    const { data: viaSession } = await supabase
+      .from("users")
+      .select("id, role")
+      .eq("auth_user_id", user.id)
+      .single()
+    if (viaSession) internalUser = viaSession as { id: string; role: string }
+    else {
+      const { data: viaAdmin } = await admin
+        .from("users")
+        .select("id, role")
+        .eq("auth_user_id", user.id)
+        .single()
+      if (viaAdmin) internalUser = viaAdmin as { id: string; role: string }
+    }
+  }
   if (!internalUser || !["admin", "naborar"].includes(internalUser.role)) {
     return { error: "Nemáte oprávnění" as const }
   }
-
-  const admin = createAdminClient()
 
   const { data: akce } = await admin
     .from("akce")

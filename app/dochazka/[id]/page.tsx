@@ -212,9 +212,10 @@ export default function DochazkaPage({
                   name="pin"
                   type="text"
                   inputMode="numeric"
-                  pattern="[0-9]*"
+                  pattern="[0-9]{4,6}"
                   maxLength={6}
-                  placeholder="6-místný PIN"
+                  minLength={4}
+                  placeholder="PIN (4–6 čísel)"
                   className="text-center text-2xl tracking-widest h-14"
                   required
                   autoFocus
