@@ -19,9 +19,13 @@ interface Props {
   defaultOpen?: boolean
 }
 
-// UI typ: 'jina_firma' = externí zakázka mimo náš systém; v submit se mapuje
-// na typ_zaznamu='ostatni' s prefixem v napln_prace (viz server action).
-type RowTyp = TypZaznamu | "jina_firma"
+// UI typy:
+//  - 'nabidka'      = naše zakázka (billable, započte se do mzdy)
+//  - 'crewmate_rezie' = interní Crewmate režie / meta (billable)
+//  - 'ostatni'      = evidenční záznam (mimo-práce, non-billable)
+// Schema freeze: 'crewmate_rezie' se mapuje na typ_zaznamu='ostatni' + prefix
+// "[Režie] " v napln_prace (zdroj pravdy pro future agregaci billable hodin).
+type RowTyp = TypZaznamu | "crewmate_rezie"
 
 type RowState = {
   key: string
@@ -29,8 +33,6 @@ type RowState = {
   nabidka_id: string
   nabidka_query: string
   trvani: string
-  firma_nazev: string
-  firma_pozice: string
 }
 
 const emptyRow = (): RowState => ({
@@ -39,8 +41,6 @@ const emptyRow = (): RowState => ({
   nabidka_id: "",
   nabidka_query: "",
   trvani: "",
-  firma_nazev: "",
-  firma_pozice: "",
 })
 
 /**
@@ -74,19 +74,17 @@ export function PridatHodinyDialog({ datum, aktivniNabidky, onSuccess, trigger, 
     return parseMinutes(r.trvani)
   }
 
-  // Pro submit filter — musí mít zakázku (Zakázka) / firmu (Jiná firma) + platné trvání.
+  // Pro submit filter — Zakázka musí mít vybranou, ostatní dva typy stačí s trváním.
   function isRowSubmittable(r: RowState): boolean {
     const min = rowMinutes(r)
     if (min === null || min <= 0) return false
     if (r.typ === "nabidka") return !!r.nabidka_id
-    if (r.typ === "jina_firma") return !!r.firma_nazev.trim()
     return true
   }
 
   // Pro progressive disclosure — stačí jakýkoliv meaningful input.
   function hasAnyInput(r: RowState): boolean {
     if (r.typ === "nabidka" && r.nabidka_id) return true
-    if (r.typ === "jina_firma" && r.firma_nazev.trim()) return true
     const min = rowMinutes(r)
     if (min !== null && min > 0) return true
     return false
@@ -149,15 +147,14 @@ export function PridatHodinyDialog({ datum, aktivniNabidky, onSuccess, trigger, 
     }
 
     const payload = filledRows.map(r => {
-      // "Jiná firma" UI typ → server: typ='ostatni' + firma_nazev/firma_pozice
-      // (server je prefixne do napln_prace).
-      if (r.typ === "jina_firma") {
+      // Crewmate režie UI typ → server: typ='ostatni' + marker pro prefix
+      // "[Režie] " v napln_prace (billable rozlišení post-MVP přes text scan).
+      if (r.typ === "crewmate_rezie") {
         return {
           typ_zaznamu: "ostatni" as const,
           nabidka_id: null,
           trvani_minut: rowMinutes(r) as number,
-          firma_nazev: r.firma_nazev.trim(),
-          firma_pozice: r.firma_pozice.trim() || undefined,
+          is_rezie: true,
         }
       }
       return {
@@ -197,11 +194,11 @@ export function PridatHodinyDialog({ datum, aktivniNabidky, onSuccess, trigger, 
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Zapsat odpracované hodiny</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 pr-1 -mr-1">
           {/* Datum + Odkud */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -333,24 +330,26 @@ function RowEditor({
         <div className="flex flex-wrap gap-1">
           <button
             type="button"
-            onClick={() => onChange({ typ: "nabidka", firma_nazev: "", firma_pozice: "" })}
+            onClick={() => onChange({ typ: "nabidka" })}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${row.typ === "nabidka" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
           >
             Zakázka
           </button>
           <button
             type="button"
-            onClick={() => onChange({ typ: "ostatni", nabidka_id: "", nabidka_query: "", firma_nazev: "", firma_pozice: "" })}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${row.typ === "ostatni" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+            onClick={() => onChange({ typ: "crewmate_rezie", nabidka_id: "", nabidka_query: "" })}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${row.typ === "crewmate_rezie" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+            title="Interní Crewmate práce (meetingy, admin, vývoj, onboarding)"
           >
-            Ostatní
+            Crewmate režie
           </button>
           <button
             type="button"
-            onClick={() => onChange({ typ: "jina_firma", nabidka_id: "", nabidka_query: "" })}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${row.typ === "jina_firma" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+            onClick={() => onChange({ typ: "ostatni", nabidka_id: "", nabidka_query: "" })}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${row.typ === "ostatni" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+            title="Mimo-pracovní evidence (nezapočítává se do mzdy)"
           >
-            Jiná firma
+            Ostatní
           </button>
         </div>
         {onRemove && (
@@ -406,26 +405,17 @@ function RowEditor({
           )
         )}
 
-        {row.typ === "ostatni" && (
-          <div className="rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-            Ostatní (bez zakázky — admin, porady, školení…)
+        {row.typ === "crewmate_rezie" && (
+          <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+            <span className="font-medium">Crewmate režie</span>{" "}
+            <span className="text-muted-foreground">— interní práce (meetingy, admin, onboarding). Započítá se do mzdy.</span>
           </div>
         )}
 
-        {row.typ === "jina_firma" && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <Input
-              placeholder="Název firmy (např. Kofola)"
-              value={row.firma_nazev}
-              onChange={(e) => onChange({ firma_nazev: e.target.value })}
-              aria-label="Název firmy"
-            />
-            <Input
-              placeholder="Pozice (volitelné, např. DJ)"
-              value={row.firma_pozice}
-              onChange={(e) => onChange({ firma_pozice: e.target.value })}
-              aria-label="Pozice u jiné firmy"
-            />
+        {row.typ === "ostatni" && (
+          <div className="rounded-md border border-input bg-muted/30 px-3 py-2 text-sm">
+            <span className="font-medium">Ostatní</span>{" "}
+            <span className="text-muted-foreground">— jen evidence, nezapočítá se do mzdy.</span>
           </div>
         )}
       </div>
