@@ -36,11 +36,10 @@ import { BlokaceActions, BlokovanBadge } from "@/components/brigadnici/blokace-a
 import { GdprErasureDialog } from "@/components/brigadnici/gdpr-erasure-dialog"
 import { getCurrentUserRole } from "@/lib/actions/users"
 import { BrigadnikAkceSekce } from "@/components/brigadnici/brigadnik-akce-sekce"
-import { HodnoceniList, type HodnoceniItem } from "@/components/brigadnici/hodnoceni-list"
-import { PridatHodnoceniDialog } from "@/components/brigadnici/pridat-hodnoceni-dialog"
+import { type HodnoceniItem } from "@/components/brigadnici/hodnoceni-list"
+import { HistorieHodnoceniTimeline } from "@/components/brigadnici/historie-hodnoceni-timeline"
 import { FakturantBadge } from "@/components/brigadnici/fakturant-badge"
 import { BrigadnikFotoAvatar } from "@/components/brigadnici/brigadnik-foto-avatar"
-import { StarRating } from "@/components/ui/star-rating"
 import { BrigadnikEmailTab } from "@/components/email/brigadnik-email-tab"
 import { getThreads, getKomunikaceTimeline } from "@/lib/actions/email"
 import { createClient } from "@/lib/supabase/server"
@@ -90,10 +89,6 @@ export default async function BrigadnikDetailPage({
   const isAdmin = userRole === "admin"
 
   const hodnoceniItems = hodnoceniData as unknown as HodnoceniItem[]
-  const hodnoceniPrumer =
-    hodnoceniItems.length === 0
-      ? 0
-      : hodnoceniItems.reduce((acc, h) => acc + h.hodnoceni, 0) / hodnoceniItems.length
 
   // Bucket crewmate-storage je private — foto_url/cv_url jsou storage paths,
   // ne public URLs. Vygenerujeme signed URL (TTL 1h, stačí pro stránku).
@@ -198,10 +193,9 @@ export default async function BrigadnikDetailPage({
           <TabsTrigger value="prehled">Přehled</TabsTrigger>
           <TabsTrigger value="akce">Akce</TabsTrigger>
           <TabsTrigger value="udaje">Osobní údaje</TabsTrigger>
-          <TabsTrigger value="hodnoceni">Hodnocení ({hodnoceniItems.length})</TabsTrigger>
           <TabsTrigger value="zkusenosti">Zkušenosti ({zkusenosti.length})</TabsTrigger>
           <TabsTrigger value="smluvni">Smluvní stav</TabsTrigger>
-          <TabsTrigger value="historie">Historie</TabsTrigger>
+          <TabsTrigger value="historie">Historie & hodnocení ({historie.length + hodnoceniItems.length})</TabsTrigger>
           <TabsTrigger value="komunikace">Komunikace ({brigadnikThreads.length})</TabsTrigger>
         </TabsList>
 
@@ -285,25 +279,6 @@ export default async function BrigadnikDetailPage({
 
         <TabsContent value="akce" className="mt-4">
           <BrigadnikAkceSekce brigadnikId={brigadnik.id} />
-        </TabsContent>
-
-        <TabsContent value="hodnoceni" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <CardTitle className="flex items-center gap-3">
-                  Hodnocení ({hodnoceniItems.length})
-                  {hodnoceniItems.length > 0 && (
-                    <StarRating value={hodnoceniPrumer} count={hodnoceniItems.length} />
-                  )}
-                </CardTitle>
-                <PridatHodnoceniDialog brigadnikId={brigadnik.id} akceOptions={akceOptions} />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <HodnoceniList items={hodnoceniItems} akceOptions={akceOptions} />
-            </CardContent>
-          </Card>
         </TabsContent>
 
         <TabsContent value="udaje" className="mt-4">
@@ -472,22 +447,16 @@ export default async function BrigadnikDetailPage({
 
         <TabsContent value="historie" className="mt-4">
           <Card>
-            <CardHeader><CardTitle>Historie</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Historie & hodnocení</CardTitle>
+            </CardHeader>
             <CardContent>
-              {historie.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Žádná historie.</p>
-              ) : (
-                <div className="space-y-3">
-                  {historie.map((h) => (
-                    <div key={h.id} className="flex items-start gap-3 text-sm">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap mt-0.5">
-                        {new Date(h.created_at).toLocaleString("cs-CZ")}
-                      </span>
-                      <span>{h.popis}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <HistorieHodnoceniTimeline
+                brigadnikId={brigadnik.id}
+                historie={historie as unknown as { id: string; created_at: string; typ: string | null; popis: string | null }[]}
+                hodnoceni={hodnoceniItems}
+                akceOptions={akceOptions}
+              />
             </CardContent>
           </Card>
         </TabsContent>
