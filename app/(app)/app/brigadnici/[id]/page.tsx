@@ -6,7 +6,8 @@ import { notFound } from "next/navigation"
 // (nový free tier od 2025) max 300s, Pro plan 800s.
 export const maxDuration = 60
 import Link from "next/link"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, FileText } from "lucide-react"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -93,6 +94,30 @@ export default async function BrigadnikDetailPage({
       ? 0
       : hodnoceniItems.reduce((acc, h) => acc + h.hodnoceni, 0) / hodnoceniItems.length
 
+  // Bucket crewmate-storage je private — foto_url/cv_url jsou storage paths,
+  // ne public URLs. Vygenerujeme signed URL (TTL 1h, stačí pro stránku).
+  let fotoSignedUrl: string | null = null
+  let cvSignedUrl: string | null = null
+  if (brigadnik.foto_url || brigadnik.cv_url) {
+    const adminStorage = createAdminClient().storage.from("crewmate-storage")
+    const TTL = 3600 // 1 hodina
+    if (brigadnik.foto_url) {
+      // Pokud už je to absolutní URL (legacy), nechat tak; jinak zpracovat jako path.
+      if (brigadnik.foto_url.startsWith("http")) fotoSignedUrl = brigadnik.foto_url
+      else {
+        const { data } = await adminStorage.createSignedUrl(brigadnik.foto_url, TTL)
+        fotoSignedUrl = data?.signedUrl ?? null
+      }
+    }
+    if (brigadnik.cv_url) {
+      if (brigadnik.cv_url.startsWith("http")) cvSignedUrl = brigadnik.cv_url
+      else {
+        const { data } = await adminStorage.createSignedUrl(brigadnik.cv_url, TTL)
+        cvSignedUrl = data?.signedUrl ?? null
+      }
+    }
+  }
+
   // Filter threads for this brigadník
   const brigadnikThreads = emailData.threads.filter(t => t.brigadnik_id === id)
   const dppValidation = validateDPPFields(brigadnik)
@@ -106,9 +131,9 @@ export default async function BrigadnikDetailPage({
             <ArrowLeft className="h-4 w-4" /><span className="sr-only">Zpět</span>
           </Button>
         </Link>
-        {brigadnik.foto_url && (
+        {fotoSignedUrl && (
           <div className="h-12 w-12 rounded-full overflow-hidden bg-muted shrink-0">
-            <img src={brigadnik.foto_url} alt={`${brigadnik.jmeno} ${brigadnik.prijmeni}`} className="h-full w-full object-cover" />
+            <img src={fotoSignedUrl} alt={`${brigadnik.jmeno} ${brigadnik.prijmeni}`} className="h-full w-full object-cover" />
           </div>
         )}
         <div>
@@ -134,6 +159,14 @@ export default async function BrigadnikDetailPage({
           </div>
         </div>
         <div className="ml-auto flex gap-2">
+          {cvSignedUrl && (
+            <a href={cvSignedUrl} target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" size="sm">
+                <FileText className="h-3.5 w-3.5 mr-1.5" />
+                CV
+              </Button>
+            </a>
+          )}
           <UpravitBrigadnikaDialog
             brigadnik={{
               ...brigadnik,
