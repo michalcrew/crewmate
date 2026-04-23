@@ -41,6 +41,8 @@ export default async function AkceDetailPage({
   // F-0016 post: dokumentační stav per brigádníka z VIEW (JOIN přes nabidka_id pokud akce má zakázku)
   const brigadnikIds = [...prirazeniIds].filter(Boolean) as string[]
   const dokStavMap = new Map<string, string>()
+  // Vlastník (naborar) per brigadnik v kontextu této zakázky (akce.nabidka_id).
+  const vlastnikMap = new Map<string, { jmeno: string; prijmeni: string }>()
   if (brigadnikIds.length > 0) {
     const supabase = await createClient()
     const nabidkaId = (akce as unknown as { nabidka_id?: string | null }).nabidka_id ?? null
@@ -52,6 +54,26 @@ export default async function AkceDetailPage({
         .in("brigadnik_id", brigadnikIds)
       for (const r of data ?? []) {
         if (r.brigadnik_id && r.dokumentacni_stav) dokStavMap.set(r.brigadnik_id, r.dokumentacni_stav)
+      }
+
+      // Vlastník (naborar) — pipeline_entry pro brigadnici v této nabidce.
+      const { data: pipelineRows } = await supabase
+        .from("pipeline_entries")
+        .select("brigadnik_id, naborar_id")
+        .eq("nabidka_id", nabidkaId)
+        .in("brigadnik_id", brigadnikIds)
+      const naborarIds = [...new Set((pipelineRows ?? []).map(p => (p as { naborar_id: string | null }).naborar_id).filter(Boolean))] as string[]
+      if (naborarIds.length > 0) {
+        const { data: users } = await supabase
+          .from("users")
+          .select("id, jmeno, prijmeni")
+          .in("id", naborarIds)
+        const userMap = new Map<string, { jmeno: string; prijmeni: string }>()
+        for (const u of users ?? []) userMap.set((u as { id: string }).id, { jmeno: (u as { jmeno: string }).jmeno, prijmeni: (u as { prijmeni: string }).prijmeni })
+        for (const row of pipelineRows ?? []) {
+          const r = row as { brigadnik_id: string; naborar_id: string | null }
+          if (r.naborar_id && userMap.has(r.naborar_id)) vlastnikMap.set(r.brigadnik_id, userMap.get(r.naborar_id)!)
+        }
       }
     }
     // Fallback: pro brigádníky bez nabidka_id řádku (ad-hoc akce) se stav počítá z brigadnici + smluvni_stav
@@ -172,6 +194,7 @@ export default async function AkceDetailPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Brigádník</TableHead>
+                  <TableHead>Vlastník</TableHead>
                   <TableHead>Pozice</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Stav</TableHead>
@@ -186,6 +209,7 @@ export default async function AkceDetailPage({
                   const b = p.brigadnik as { id: string; jmeno: string; prijmeni: string; telefon: string } | null
                   const d = (p.dochazka as { prichod: string | null; odchod: string | null; hodin_celkem: number | null; hodnoceni: number | null }[])?.[0]
                   const dokStav = b ? dokStavMap.get(b.id) : undefined
+                  const vlastnik = b ? vlastnikMap.get(b.id) : undefined
                   return (
                     <TableRow key={p.id}>
                       <TableCell>
@@ -194,6 +218,19 @@ export default async function AkceDetailPage({
                             {b.prijmeni} {b.jmeno}
                           </Link>
                         ) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {vlastnik ? (
+                          <Badge
+                            variant="outline"
+                            className="bg-primary/10 text-primary border-primary/20 text-xs"
+                            title={`${vlastnik.jmeno} ${vlastnik.prijmeni}`}
+                          >
+                            👤 {vlastnik.jmeno}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{p.pozice || "—"}</TableCell>
                       <TableCell>

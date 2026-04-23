@@ -415,6 +415,15 @@ function BrigadnikCardInner({
             >
               {b.prijmeni} {b.jmeno}
             </Link>
+            {entry.naborar?.jmeno && (
+              <Badge
+                variant="outline"
+                className="bg-primary/10 text-primary border-primary/20 text-[10px] h-5"
+                title={`Vlastník: ${entry.naborar.jmeno} ${entry.naborar.prijmeni ?? ""}`.trim()}
+              >
+                👤 {entry.naborar.jmeno}
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">{b.telefon}</p>
         </div>
@@ -569,12 +578,21 @@ function AssignmentMatrix({
                   return (
                     <tr key={e.id} className="border-b last:border-b-0 hover:bg-muted/30">
                       <td className="sticky left-0 bg-card group-hover:bg-muted/30 px-3 py-2 border-r">
-                        {/* Row 1: Fakturant badge prefix + jméno */}
+                        {/* Row 1: Fakturant badge prefix + jméno + vlastník */}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <FakturantBadge typ={b.typ_brigadnika} variant="prefix" />
                           <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
                             {b.prijmeni} {b.jmeno}
                           </Link>
+                          {e.naborar?.jmeno && (
+                            <Badge
+                              variant="outline"
+                              className="bg-primary/10 text-primary border-primary/20 text-[10px] h-5"
+                              title={`Vlastník: ${e.naborar.jmeno} ${e.naborar.prijmeni ?? ""}`.trim()}
+                            >
+                              👤 {e.naborar.jmeno}
+                            </Badge>
+                          )}
                         </div>
 
                         {/* Row 2: Telefon (vždy) */}
