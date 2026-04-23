@@ -14,6 +14,7 @@ import { createClient } from "@/lib/supabase/server"
 import { AddPrirazeniDialog } from "@/components/akce/add-prirazeni-dialog"
 import { AkceStavSelector } from "@/components/akce/akce-stav-selector"
 import { AkceDetailZrusitButton } from "@/components/akce/akce-detail-zrusit-button"
+import { EditAkceDialog } from "@/components/akce/edit-akce-dialog"
 import { DokumentacniStavSelect } from "@/components/brigadnici/dokumentacni-stav-select"
 
 export const metadata: Metadata = { title: "Detail akce" }
@@ -116,6 +117,19 @@ export default async function AkceDetailPage({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Quick-edit čas + počet lidí (schováno pro zrušené) */}
+          {!isZrusena && (
+            <EditAkceDialog
+              akceId={id}
+              akceStav={akceStav}
+              defaultCasOd={akce.cas_od ?? null}
+              defaultCasDo={akce.cas_do ?? null}
+              defaultPocetLidi={akce.pocet_lidi ?? null}
+              nazev={akce.nazev}
+              datum={akce.datum}
+              misto={akce.misto ?? null}
+            />
+          )}
           {/* F-0018: odkaz na admin dochazka grid */}
           <Link href={`/app/akce/${id}/dochazka`}>
             <Button variant="outline" size="sm">Docházka</Button>
