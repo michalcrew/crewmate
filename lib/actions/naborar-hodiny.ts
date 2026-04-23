@@ -547,11 +547,11 @@ const bulkRowSchema = z.object({
     .int("Trvání musí být celé číslo minut")
     .positive("Trvání musí být kladné")
     .max(1440, "Trvání nesmí přesáhnout 24 hodin"),
-  // "Jiná firma" = externí práce (freelance mimo náš systém). Schema freeze
-  // = nezavádíme nový typ_zaznamu enum ani sloupec; row se uloží s typ='ostatni'
-  // + napln_prace prefixovaný "[Jiná firma: {nazev}, pozice: {pozice}]".
-  firma_nazev: z.string().max(200).optional(),
-  firma_pozice: z.string().max(200).optional(),
+  // Crewmate režie = interní meta práce (billable, jako zakázka). Schema freeze
+  // = bez nového enum value; ukládáme jako typ_zaznamu='ostatni' s prefixem
+  // "[Režie] " v napln_prace, který slouží jako marker pro future billable
+  // aggregaci (napln_prace LIKE '[Režie]%' OR typ='nabidka').
+  is_rezie: z.boolean().optional(),
 }).superRefine((val, ctx) => {
   if (val.typ_zaznamu === "nabidka" && !val.nabidka_id) {
     ctx.addIssue({ code: "custom", message: "Chybí zakázka", path: ["nabidka_id"] })
@@ -605,17 +605,15 @@ export async function addHodinyBulk(
 
   const admin = createAdminClient()
   const payload = data.rows.map(r => {
-    // "Jiná firma" subtyp — schema freeze-friendly: uložíme jako typ='ostatni'
-    // s prefixem v napln_prace. Diskuse o first-class poli post-MVP.
-    const firmaPrefix = r.firma_nazev?.trim()
-      ? `[Jiná firma: ${r.firma_nazev.trim()}${r.firma_pozice?.trim() ? `, pozice: ${r.firma_pozice.trim()}` : ""}] `
-      : ""
+    // Crewmate režie: prefix "[Režie] " v napln_prace slouží jako marker pro
+    // future billable aggregaci. DB zůstává s typ='ostatni'.
+    const rezePrefix = r.is_rezie ? "[Režie] " : ""
     return {
       user_id: me.id,
       datum: data.datum,
       trvani_minut: r.trvani_minut,
       misto_prace: data.misto_prace ?? null,
-      napln_prace: firmaPrefix + data.napln_prace,
+      napln_prace: rezePrefix + data.napln_prace,
       typ_zaznamu: r.typ_zaznamu,
       nabidka_id: r.typ_zaznamu === "nabidka" ? (r.nabidka_id ?? null) : null,
       je_zpetny_zapis: isLate,
