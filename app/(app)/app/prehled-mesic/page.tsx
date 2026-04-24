@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Download } from "lucide-react"
+import { Download, Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -88,6 +88,9 @@ export default async function PrehledMesicPage({
         title={`Měsíční přehled — ${mesicLabel}`}
         actions={
           <div className="flex gap-2">
+            <Link href={`/app/vyplaty/${mesic}`}>
+              <Button size="sm"><Wallet className="h-4 w-4 mr-1.5" />Výplaty</Button>
+            </Link>
             <Link href={`/api/export/dochazka?mesic=${mesic}`}>
               <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-1.5" />Docházka</Button>
             </Link>
