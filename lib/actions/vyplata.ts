@@ -290,9 +290,12 @@ export async function upsertSazbaHodinova(
     .from("prirazeni")
     .update({ sazba_hodinova: parsed.data })
     .eq("id", prirazeniId)
-  if (error) return { error: "Nepodařilo se uložit" }
+  if (error) {
+    console.error("upsertSazbaHodinova update error:", error)
+    return { error: `DB chyba: ${error.message}` }
+  }
 
-  revalidatePath(`/app/vyplaty/${auth.akceMesic}`)
+  revalidatePath("/app/vyplaty/[mesic]", "page")
   return { success: true, serverValue: parsed.data }
 }
 
@@ -337,21 +340,23 @@ export async function upsertDyskoKc(
       .from("dochazka")
       .update({ extra_odmena_kc: parsed.data })
       .eq("id", existing.id)
-    if (error) return { error: "Nepodařilo se uložit" }
+    if (error) {
+      console.error("upsertDyskoKc update error:", error)
+      return { error: `DB chyba: ${error.message}` }
+    }
   } else {
     const { error } = await admin.from("dochazka").insert({
       prirazeni_id: prirazeniId,
       akce_id: prir.akce_id as string,
       brigadnik_id: prir.brigadnik_id as string,
-      prichod: null,
-      odchod: null,
-      hodnoceni: null,
-      poznamka: null,
       extra_odmena_kc: parsed.data,
     })
-    if (error) return { error: "Nepodařilo se uložit" }
+    if (error) {
+      console.error("upsertDyskoKc insert error:", error)
+      return { error: `DB chyba: ${error.message}` }
+    }
   }
 
-  revalidatePath(`/app/vyplaty/${auth.akceMesic}`)
+  revalidatePath("/app/vyplaty/[mesic]", "page")
   return { success: true, serverValue: parsed.data }
 }

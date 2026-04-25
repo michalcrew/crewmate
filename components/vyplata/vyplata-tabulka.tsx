@@ -242,7 +242,7 @@ function SubHeader() {
         Sazba
       </th>
       <th className="border-b px-2 py-1.5 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
-        Dýško
+        Bonus
       </th>
       <th className="border-b border-r px-2 py-1.5 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
         Celkem
@@ -339,7 +339,7 @@ function Cell({
         <EditableNumberCell
           value={cell.extraOdmenaKc}
           formatDisplay={(v) => (v && v > 0 ? fmtKc(v) : "—")}
-          ariaLabel="Dýško"
+          ariaLabel="Bonus"
           disabled={locked}
           onSave={(v) => upsertDyskoKc(cell.prirazeniId, v)}
         />

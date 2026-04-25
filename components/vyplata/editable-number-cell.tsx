@@ -1,29 +1,29 @@
 "use client"
 
-import { useEffect, useRef, useState, useTransition } from "react"
+import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 interface Props {
   value: number | null
-  onSave: (newValue: number | null) => Promise<{ success: true; serverValue: number | null } | { error: string; locked?: boolean }>
+  onSave: (
+    newValue: number | null,
+  ) => Promise<
+    | { success: true; serverValue: number | null }
+    | { error: string; locked?: boolean }
+  >
   formatDisplay: (v: number | null) => string
   emptyDisplay?: string
   ariaLabel?: string
   className?: string
   disabled?: boolean
   inputSuffix?: string
-  step?: string
 }
 
 /**
- * Editovatelná číselná buňka.
- * - Click → input mode (autoselect)
- * - Enter / blur → save (pokud se hodnota změnila)
- * - Esc → cancel a vrátit původní
- * - Optimistic UI: lokálně se rovnou změní; po ack ze serveru router.refresh
- *   přepočítá agregace (řádkový + sloupcový součet).
+ * Editovatelná číselná buňka s formulářem.
+ * Form wrapper zajistí, že Enter v inputu spustí onSubmit (nativní browser chování).
  */
 export function EditableNumberCell({
   value,
@@ -34,16 +34,14 @@ export function EditableNumberCell({
   className,
   disabled = false,
   inputSuffix,
-  step = "0.01",
 }: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<string>("")
   const [optimistic, setOptimistic] = useState<number | null>(value)
-  const [pending, startTransition] = useTransition()
+  const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
-  // Sync s prop value když přijde nová data (router.refresh)
   useEffect(() => {
     if (!editing) setOptimistic(value)
   }, [value, editing])
@@ -56,31 +54,31 @@ export function EditableNumberCell({
   }, [editing])
 
   const startEdit = () => {
-    if (disabled) return
+    if (disabled || saving) return
     setDraft(optimistic === null ? "" : String(optimistic))
     setEditing(true)
   }
 
-  const commit = () => {
-    const trimmed = draft.trim()
-    let newVal: number | null
-    if (trimmed === "") {
-      newVal = null
-    } else {
-      const parsed = Number(trimmed.replace(",", "."))
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        toast.error("Neplatná hodnota")
-        setEditing(false)
-        return
-      }
-      newVal = Math.round(parsed * 100) / 100
+  const parseAndValidate = (raw: string): { ok: true; value: number | null } | { ok: false } => {
+    const trimmed = raw.trim()
+    if (trimmed === "") return { ok: true, value: null }
+    const parsed = Number(trimmed.replace(",", "."))
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      toast.error("Neplatná hodnota — zadejte nezáporné číslo")
+      return { ok: false }
     }
+    return { ok: true, value: Math.round(parsed * 100) / 100 }
+  }
 
+  const performSave = async (newVal: number | null) => {
+    if (newVal === optimistic) {
+      setEditing(false)
+      return
+    }
     setEditing(false)
-    if (newVal === optimistic) return
-
     setOptimistic(newVal)
-    startTransition(async () => {
+    setSaving(true)
+    try {
       const result = await onSave(newVal)
       if ("error" in result) {
         setOptimistic(value) // rollback
@@ -88,7 +86,33 @@ export function EditableNumberCell({
         return
       }
       router.refresh()
-    })
+    } catch (err) {
+      console.error("EditableNumberCell save error:", err)
+      setOptimistic(value)
+      toast.error("Chyba při ukládání")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const parsed = parseAndValidate(draft)
+    if (!parsed.ok) {
+      setEditing(false)
+      return
+    }
+    void performSave(parsed.value)
+  }
+
+  const handleBlur = () => {
+    // Při blur (klik mimo input) ulož stejně jako Enter.
+    const parsed = parseAndValidate(draft)
+    if (!parsed.ok) {
+      setEditing(false)
+      return
+    }
+    void performSave(parsed.value)
   }
 
   const cancel = () => {
@@ -98,29 +122,27 @@ export function EditableNumberCell({
 
   if (editing) {
     return (
-      <input
-        ref={inputRef}
-        type="number"
-        step={step}
-        min="0"
-        value={draft}
-        aria-label={ariaLabel}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault()
-            commit()
-          } else if (e.key === "Escape") {
-            e.preventDefault()
-            cancel()
-          }
-        }}
-        className={cn(
-          "w-full bg-background border border-primary rounded-sm px-1 py-0.5 text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-primary",
-          className,
-        )}
-      />
+      <form onSubmit={handleSubmit} className="contents">
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="decimal"
+          value={draft}
+          aria-label={ariaLabel}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault()
+              cancel()
+            }
+          }}
+          className={cn(
+            "w-full bg-background border border-primary rounded-sm px-1 py-0.5 text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-primary",
+            className,
+          )}
+        />
+      </form>
     )
   }
 
@@ -130,14 +152,14 @@ export function EditableNumberCell({
     <button
       type="button"
       onClick={startEdit}
-      disabled={disabled}
+      disabled={disabled || saving}
       aria-label={ariaLabel}
       className={cn(
         "w-full text-xs tabular-nums text-right rounded-sm px-1 py-0.5 transition-colors",
         disabled
           ? "cursor-default text-muted-foreground"
           : "hover:bg-primary/10 cursor-pointer",
-        pending && "opacity-50",
+        saving && "opacity-50",
         optimistic === null && "text-muted-foreground/60",
         className,
       )}
