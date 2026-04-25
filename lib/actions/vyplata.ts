@@ -206,12 +206,18 @@ const dyskoSchema = z
 
 /**
  * Authorize admin / náborář a ověř, že měsíc akce není uzamčený.
- * Vrátí { internalUserId, akceMesic, isLocked } nebo error.
+ * Vrátí { internalUserId, akceMesic, isLocked, role } nebo error.
  */
 async function authorizeAndCheckLock(
   prirazeniId: string,
 ): Promise<
-  | { ok: true; akceMesic: string; isLocked: boolean; internalUserId: string }
+  | {
+      ok: true
+      akceMesic: string
+      isLocked: boolean
+      internalUserId: string
+      role: string
+    }
   | { ok: false; error: string }
 > {
   const supabase = await createClient()
@@ -257,6 +263,7 @@ async function authorizeAndCheckLock(
   return {
     ok: true,
     akceMesic,
+    role,
     isLocked: !!lock,
     internalUserId: internalUser.id as string,
   }
@@ -267,17 +274,21 @@ export type UpsertResult =
   | { error: string; locked?: boolean }
 
 /**
- * Update prirazeni.sazba_hodinova. Admin / náborář only. Lock blokuje
- * (PR 3 přidá override pro admina).
+ * Update prirazeni.sazba_hodinova. Admin / náborář.
+ * Pokud je měsíc uzamčený, vrátí { error, locked: true }.
+ * Admin může předat override=true pro úpravu uzamčeného měsíce.
  */
 export async function upsertSazbaHodinova(
   prirazeniId: string,
   sazba: number | null,
+  options?: { override?: boolean },
 ): Promise<UpsertResult> {
   const auth = await authorizeAndCheckLock(prirazeniId)
   if (!auth.ok) return { error: auth.error }
   if (auth.isLocked) {
-    return { error: "Měsíc je uzamčený", locked: true }
+    if (!options?.override || auth.role !== "admin") {
+      return { error: "Měsíc je uzamčený", locked: true }
+    }
   }
 
   const parsed = sazbaSchema.safeParse(sazba)
@@ -303,15 +314,20 @@ export async function upsertSazbaHodinova(
  * Update dochazka.extra_odmena_kc. Pokud dochazka řádek neexistuje
  * (brigádník nemá ani příchod ani odchod), vytvoříme ho s NULL časy
  * a jen extra_odmena_kc.
+ *
+ * Lock blokuje, admin může s override=true.
  */
 export async function upsertDyskoKc(
   prirazeniId: string,
   dysko: number | null,
+  options?: { override?: boolean },
 ): Promise<UpsertResult> {
   const auth = await authorizeAndCheckLock(prirazeniId)
   if (!auth.ok) return { error: auth.error }
   if (auth.isLocked) {
-    return { error: "Měsíc je uzamčený", locked: true }
+    if (!options?.override || auth.role !== "admin") {
+      return { error: "Měsíc je uzamčený", locked: true }
+    }
   }
 
   const parsed = dyskoSchema.safeParse(dysko)
@@ -359,4 +375,91 @@ export async function upsertDyskoKc(
 
   revalidatePath("/app/vyplaty/[mesic]", "page")
   return { success: true, serverValue: parsed.data }
+}
+
+// ============================================================================
+// PR 4 — uzamčení / odemčení měsíce
+// ============================================================================
+
+const mesicSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Neplatný formát měsíce")
+
+/**
+ * Uzamkne měsíc (vytvoří záznam v vyplata_uzamceni). Admin only.
+ * Idempotentní — pokud už uzamčeno, vrátí success bez změny.
+ */
+export async function lockMesic(
+  mesic: string,
+): Promise<{ success: true } | { error: string }> {
+  const parsed = mesicSchema.safeParse(mesic)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatný měsíc" }
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const role = await getCurrentUserRole()
+  if (role !== "admin") return { error: "Uzamknout měsíc může jen admin" }
+
+  const admin = createAdminClient()
+
+  const { data: internalUser } = await admin
+    .from("users")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle()
+  if (!internalUser) return { error: "Uživatel nenalezen" }
+
+  const { error } = await admin.from("vyplata_uzamceni").upsert(
+    {
+      mesic_rok: parsed.data,
+      uzamceno_by_user_id: internalUser.id as string,
+      uzamceno_at: new Date().toISOString(),
+    },
+    { onConflict: "mesic_rok" },
+  )
+  if (error) {
+    console.error("lockMesic error:", error)
+    return { error: `DB chyba: ${error.message}` }
+  }
+
+  revalidatePath("/app/vyplaty/[mesic]", "page")
+  return { success: true }
+}
+
+/**
+ * Odemkne měsíc (smaže záznam z vyplata_uzamceni). Admin only.
+ */
+export async function unlockMesic(
+  mesic: string,
+): Promise<{ success: true } | { error: string }> {
+  const parsed = mesicSchema.safeParse(mesic)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatný měsíc" }
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const role = await getCurrentUserRole()
+  if (role !== "admin") return { error: "Odemknout měsíc může jen admin" }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from("vyplata_uzamceni")
+    .delete()
+    .eq("mesic_rok", parsed.data)
+  if (error) {
+    console.error("unlockMesic error:", error)
+    return { error: `DB chyba: ${error.message}` }
+  }
+
+  revalidatePath("/app/vyplaty/[mesic]", "page")
+  return { success: true }
 }

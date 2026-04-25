@@ -97,7 +97,11 @@ export default async function VyplatyMesicPage({
           </CardContent>
         </Card>
       ) : (
-        <VyplataTabulka data={data} />
+        <VyplataTabulka
+          data={data}
+          userRole={role as "admin" | "naborar"}
+          mesicLabel={mesicLabel}
+        />
       )}
     </div>
   )

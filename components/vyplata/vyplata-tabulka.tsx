@@ -14,11 +14,14 @@ import {
   type VyplataRow,
 } from "@/lib/actions/vyplata"
 import { EditableNumberCell } from "@/components/vyplata/editable-number-cell"
+import { LockControls } from "@/components/vyplata/lock-controls"
 
 const COLS_PER_AKCE = 6 // příchod, odchod, hodiny, sazba, bonus, celkem
 
 interface Props {
   data: VyplataMesicData
+  userRole: "admin" | "naborar"
+  mesicLabel: string
 }
 
 type CellPatch = Partial<Pick<VyplataCell, "sazbaHodinova" | "extraOdmenaKc">>
@@ -99,42 +102,54 @@ const fmtDatum = (iso: string) => {
 
 type TypFilter = "vse" | "dpp" | "osvc"
 
-export function VyplataTabulka({ data: initialData }: Props) {
+export function VyplataTabulka({ data: initialData, userRole, mesicLabel }: Props) {
   const [akceFilter, setAkceFilter] = useState<string>("vse")
   const [typFilter, setTypFilter] = useState<TypFilter>("vse")
   // Lokální kopie dat pro instant recompute. Server save běží na pozadí;
   // pokud selže, revertujeme na předchozí snapshot.
   const [data, setData] = useState<VyplataMesicData>(initialData)
+  // Admin si může povolit úpravy uzamčeného měsíce (override) jen pro tuto seanci
+  const [overrideAcked, setOverrideAcked] = useState(false)
 
   // Resync když se změní initialData (např. přepnutí měsíce, navigace)
   useEffect(() => {
     setData(initialData)
+    setOverrideAcked(false) // reset override při refreshu / přepnutí měsíce
   }, [initialData])
+
+  const isLocked = !!data.uzamceno
+  const canEdit = !isLocked || (userRole === "admin" && overrideAcked)
+  const isAdmin = userRole === "admin"
+  const useOverride = isLocked && overrideAcked && isAdmin
 
   const handleSazbaSave = useCallback(
     async (prirazeniId: string, newSazba: number | null) => {
       const before = data
       setData((d) => applyCellPatch(d, prirazeniId, { sazbaHodinova: newSazba }))
-      const result = await upsertSazbaHodinova(prirazeniId, newSazba)
+      const result = await upsertSazbaHodinova(prirazeniId, newSazba, {
+        override: useOverride,
+      })
       if ("error" in result) {
         setData(before) // revert
       }
       return result
     },
-    [data],
+    [data, useOverride],
   )
 
   const handleBonusSave = useCallback(
     async (prirazeniId: string, newBonus: number | null) => {
       const before = data
       setData((d) => applyCellPatch(d, prirazeniId, { extraOdmenaKc: newBonus }))
-      const result = await upsertDyskoKc(prirazeniId, newBonus)
+      const result = await upsertDyskoKc(prirazeniId, newBonus, {
+        override: useOverride,
+      })
       if ("error" in result) {
         setData(before) // revert
       }
       return result
     },
-    [data],
+    [data, useOverride],
   )
 
   const filteredAkce = useMemo<VyplataAkce[]>(() => {
@@ -177,11 +192,25 @@ export function VyplataTabulka({ data: initialData }: Props) {
 
   const akceColumns = filteredAkce
   const totalAkceColumns = akceColumns.length
-  const isLocked = !!data.uzamceno
 
   return (
     <Card>
       <CardContent className="p-0">
+        {/* Lock controls (admin only) */}
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2 p-4 border-b bg-muted/20">
+            <LockControls
+              mesic={data.mesic}
+              mesicLabel={mesicLabel}
+              isLocked={isLocked}
+              isAdmin={isAdmin}
+              overrideAcked={overrideAcked}
+              onAckOverride={() => setOverrideAcked(true)}
+              onCancelOverride={() => setOverrideAcked(false)}
+            />
+          </div>
+        )}
+
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2 p-4 border-b">
           <span className="text-xs font-medium text-muted-foreground">Filtr:</span>
@@ -268,7 +297,7 @@ export function VyplataTabulka({ data: initialData }: Props) {
                       key={r.brigadnikId}
                       row={r}
                       akce={akceColumns}
-                      locked={isLocked}
+                      locked={!canEdit}
                       onSazbaSave={handleSazbaSave}
                       onBonusSave={handleBonusSave}
                     />
@@ -294,7 +323,7 @@ export function VyplataTabulka({ data: initialData }: Props) {
                       key={r.brigadnikId}
                       row={r}
                       akce={akceColumns}
-                      locked={isLocked}
+                      locked={!canEdit}
                       onSazbaSave={handleSazbaSave}
                       onBonusSave={handleBonusSave}
                     />
