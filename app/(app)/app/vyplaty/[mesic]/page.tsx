@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { ArrowLeft, Lock } from "lucide-react"
+import { ArrowLeft, Download, Lock } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -51,12 +51,20 @@ export default async function VyplatyMesicPage({
             : `${data.akce.length} akcí · ${data.dpp.length} DPP · ${data.osvc.length} OSVČ`
         }
         actions={
-          <Link href={`/app/prehled-mesic?mesic=${mesic}`}>
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
-              Zpět na měsíční přehled
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href={`/api/export/vyplaty/${mesic}`}>
+              <Button size="sm">
+                <Download className="h-3.5 w-3.5 mr-1.5" />
+                Stáhnout XLSX
+              </Button>
+            </Link>
+            <Link href={`/app/prehled-mesic?mesic=${mesic}`}>
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
+                Zpět
+              </Button>
+            </Link>
+          </div>
         }
       />
 
