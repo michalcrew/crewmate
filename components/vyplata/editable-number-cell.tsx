@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 interface Props {
@@ -40,7 +39,6 @@ export function EditableNumberCell({
   const [optimistic, setOptimistic] = useState<number | null>(value)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const router = useRouter()
 
   useEffect(() => {
     if (!editing) setOptimistic(value)
@@ -85,7 +83,8 @@ export function EditableNumberCell({
         toast.error(result.error)
         return
       }
-      router.refresh()
+      // parent (VyplataTabulka) drží mutable state, recompute běží lokálně —
+      // žádný router.refresh není potřeba.
     } catch (err) {
       console.error("EditableNumberCell save error:", err)
       setOptimistic(value)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
@@ -15,10 +15,73 @@ import {
 } from "@/lib/actions/vyplata"
 import { EditableNumberCell } from "@/components/vyplata/editable-number-cell"
 
-const COLS_PER_AKCE = 6 // příchod, odchod, hodiny, sazba, dýško, celkem
+const COLS_PER_AKCE = 6 // příchod, odchod, hodiny, sazba, bonus, celkem
 
 interface Props {
   data: VyplataMesicData
+}
+
+type CellPatch = Partial<Pick<VyplataCell, "sazbaHodinova" | "extraOdmenaKc">>
+
+type SaveHandler = (
+  prirazeniId: string,
+  newValue: number | null,
+) => Promise<
+  | { success: true; serverValue: number | null }
+  | { error: string; locked?: boolean }
+>
+
+function recomputeCellTotal(c: VyplataCell): number {
+  return (c.hodinCelkem ?? 0) * (c.sazbaHodinova ?? 0) + (c.extraOdmenaKc ?? 0)
+}
+
+/**
+ * Imutabilně aplikuje patch na buňku (per prirazeniId), přepočítá celkem za
+ * akci v té buňce, řádkový total a součet sekce. Používá se pro instant
+ * UI feedback po editaci sazby / bonusu, bez čekání na server.
+ */
+function applyCellPatch(
+  data: VyplataMesicData,
+  prirazeniId: string,
+  patch: CellPatch,
+): VyplataMesicData {
+  const updateRows = (rows: VyplataRow[]): { rows: VyplataRow[]; touched: boolean } => {
+    let touched = false
+    const newRows = rows.map((row) => {
+      let cellTouched = false
+      const newCells: Record<string, VyplataCell> = {}
+      for (const [akceId, cell] of Object.entries(row.cells)) {
+        if (cell.prirazeniId === prirazeniId) {
+          const updated: VyplataCell = { ...cell, ...patch }
+          updated.celkemZaAkci = recomputeCellTotal(updated)
+          newCells[akceId] = updated
+          cellTouched = true
+        } else {
+          newCells[akceId] = cell
+        }
+      }
+      if (!cellTouched) return row
+      touched = true
+      const newRowTotal = Object.values(newCells).reduce(
+        (s, c) => s + c.celkemZaAkci,
+        0,
+      )
+      return { ...row, cells: newCells, rowTotal: newRowTotal }
+    })
+    return { rows: newRows, touched }
+  }
+
+  const dppResult = updateRows(data.dpp)
+  const osvcResult = updateRows(data.osvc)
+  if (!dppResult.touched && !osvcResult.touched) return data
+
+  return {
+    ...data,
+    dpp: dppResult.rows,
+    osvc: osvcResult.rows,
+    totalDpp: dppResult.rows.reduce((s, r) => s + r.rowTotal, 0),
+    totalOsvc: osvcResult.rows.reduce((s, r) => s + r.rowTotal, 0),
+  }
 }
 
 const fmtKc = (n: number) =>
@@ -36,9 +99,43 @@ const fmtDatum = (iso: string) => {
 
 type TypFilter = "vse" | "dpp" | "osvc"
 
-export function VyplataTabulka({ data }: Props) {
+export function VyplataTabulka({ data: initialData }: Props) {
   const [akceFilter, setAkceFilter] = useState<string>("vse")
   const [typFilter, setTypFilter] = useState<TypFilter>("vse")
+  // Lokální kopie dat pro instant recompute. Server save běží na pozadí;
+  // pokud selže, revertujeme na předchozí snapshot.
+  const [data, setData] = useState<VyplataMesicData>(initialData)
+
+  // Resync když se změní initialData (např. přepnutí měsíce, navigace)
+  useEffect(() => {
+    setData(initialData)
+  }, [initialData])
+
+  const handleSazbaSave = useCallback(
+    async (prirazeniId: string, newSazba: number | null) => {
+      const before = data
+      setData((d) => applyCellPatch(d, prirazeniId, { sazbaHodinova: newSazba }))
+      const result = await upsertSazbaHodinova(prirazeniId, newSazba)
+      if ("error" in result) {
+        setData(before) // revert
+      }
+      return result
+    },
+    [data],
+  )
+
+  const handleBonusSave = useCallback(
+    async (prirazeniId: string, newBonus: number | null) => {
+      const before = data
+      setData((d) => applyCellPatch(d, prirazeniId, { extraOdmenaKc: newBonus }))
+      const result = await upsertDyskoKc(prirazeniId, newBonus)
+      if ("error" in result) {
+        setData(before) // revert
+      }
+      return result
+    },
+    [data],
+  )
 
   const filteredAkce = useMemo<VyplataAkce[]>(() => {
     if (akceFilter === "vse") return data.akce
@@ -172,6 +269,8 @@ export function VyplataTabulka({ data }: Props) {
                       row={r}
                       akce={akceColumns}
                       locked={isLocked}
+                      onSazbaSave={handleSazbaSave}
+                      onBonusSave={handleBonusSave}
                     />
                   ))}
                   <TotalRow
@@ -196,6 +295,8 @@ export function VyplataTabulka({ data }: Props) {
                       row={r}
                       akce={akceColumns}
                       locked={isLocked}
+                      onSazbaSave={handleSazbaSave}
+                      onBonusSave={handleBonusSave}
                     />
                   ))}
                   <TotalRow
@@ -268,10 +369,14 @@ function DataRow({
   row,
   akce,
   locked,
+  onSazbaSave,
+  onBonusSave,
 }: {
   row: VyplataRow
   akce: VyplataAkce[]
   locked: boolean
+  onSazbaSave: SaveHandler
+  onBonusSave: SaveHandler
 }) {
   return (
     <tr className="hover:bg-muted/30">
@@ -285,7 +390,15 @@ function DataRow({
       </td>
       {akce.map((a) => {
         const c = row.cells[a.id]
-        return <Cell key={a.id} cell={c} locked={locked} />
+        return (
+          <Cell
+            key={a.id}
+            cell={c}
+            locked={locked}
+            onSazbaSave={onSazbaSave}
+            onBonusSave={onBonusSave}
+          />
+        )
       })}
       <td className="sticky right-0 z-10 bg-background border-b border-l px-3 py-2 text-right font-semibold whitespace-nowrap">
         {fmtKc(row.rowTotal)}
@@ -297,9 +410,13 @@ function DataRow({
 function Cell({
   cell,
   locked,
+  onSazbaSave,
+  onBonusSave,
 }: {
   cell: VyplataCell | undefined
   locked: boolean
+  onSazbaSave: SaveHandler
+  onBonusSave: SaveHandler
 }) {
   if (!cell) {
     return (
@@ -332,7 +449,7 @@ function Cell({
           emptyDisplay="— Kč/h"
           ariaLabel="Sazba Kč/hod"
           disabled={locked}
-          onSave={(v) => upsertSazbaHodinova(cell.prirazeniId, v)}
+          onSave={(v) => onSazbaSave(cell.prirazeniId, v)}
         />
       </td>
       <td className="border-b px-1 py-1 whitespace-nowrap min-w-[80px]">
@@ -341,7 +458,7 @@ function Cell({
           formatDisplay={(v) => (v && v > 0 ? fmtKc(v) : "—")}
           ariaLabel="Bonus"
           disabled={locked}
-          onSave={(v) => upsertDyskoKc(cell.prirazeniId, v)}
+          onSave={(v) => onBonusSave(cell.prirazeniId, v)}
         />
       </td>
       <td
