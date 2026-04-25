@@ -1,7 +1,10 @@
 "use server"
 
 import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient } from "@/lib/supabase/server"
 import { getCurrentUserRole } from "@/lib/actions/users"
+import { z } from "zod"
+import { revalidatePath } from "next/cache"
 
 // ============================================================================
 // F-0022 — Měsíční výplatní přehled (read-only load, PR 1)
@@ -183,4 +186,172 @@ export async function getVyplataMesic(mesic: string): Promise<
       totalOsvc,
     },
   }
+}
+
+// ============================================================================
+// PR 2 — inline editace sazby a dýška
+// ============================================================================
+
+const sazbaSchema = z
+  .number()
+  .nonnegative("Sazba nemůže být záporná")
+  .max(99999.99, "Sazba je příliš vysoká")
+  .nullable()
+
+const dyskoSchema = z
+  .number()
+  .nonnegative("Dýško nemůže být záporné")
+  .max(99999.99, "Dýško je příliš vysoké")
+  .nullable()
+
+/**
+ * Authorize admin / náborář a ověř, že měsíc akce není uzamčený.
+ * Vrátí { internalUserId, akceMesic, isLocked } nebo error.
+ */
+async function authorizeAndCheckLock(
+  prirazeniId: string,
+): Promise<
+  | { ok: true; akceMesic: string; isLocked: boolean; internalUserId: string }
+  | { ok: false; error: string }
+> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: "Nepřihlášen" }
+
+  const role = await getCurrentUserRole()
+  if (!role || !["admin", "naborar"].includes(role)) {
+    return { ok: false, error: "Nemáte oprávnění" }
+  }
+
+  const admin = createAdminClient()
+
+  // Lookup interní users.id pro audit
+  const { data: internalUser } = await admin
+    .from("users")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle()
+  if (!internalUser) return { ok: false, error: "Uživatel nenalezen" }
+
+  // Najdi akci a její měsíc
+  const { data: prir } = await admin
+    .from("prirazeni")
+    .select("akce_id, akce:akce(datum)")
+    .eq("id", prirazeniId)
+    .maybeSingle()
+  if (!prir) return { ok: false, error: "Přiřazení nenalezeno" }
+
+  const akceData = (prir.akce as unknown) as { datum: string } | null
+  if (!akceData?.datum) return { ok: false, error: "Akce bez data" }
+
+  const akceMesic = akceData.datum.slice(0, 7) // YYYY-MM
+
+  const { data: lock } = await admin
+    .from("vyplata_uzamceni")
+    .select("mesic_rok")
+    .eq("mesic_rok", akceMesic)
+    .maybeSingle()
+
+  return {
+    ok: true,
+    akceMesic,
+    isLocked: !!lock,
+    internalUserId: internalUser.id as string,
+  }
+}
+
+export type UpsertResult =
+  | { success: true; serverValue: number | null }
+  | { error: string; locked?: boolean }
+
+/**
+ * Update prirazeni.sazba_hodinova. Admin / náborář only. Lock blokuje
+ * (PR 3 přidá override pro admina).
+ */
+export async function upsertSazbaHodinova(
+  prirazeniId: string,
+  sazba: number | null,
+): Promise<UpsertResult> {
+  const auth = await authorizeAndCheckLock(prirazeniId)
+  if (!auth.ok) return { error: auth.error }
+  if (auth.isLocked) {
+    return { error: "Měsíc je uzamčený", locked: true }
+  }
+
+  const parsed = sazbaSchema.safeParse(sazba)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatná sazba" }
+  }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from("prirazeni")
+    .update({ sazba_hodinova: parsed.data })
+    .eq("id", prirazeniId)
+  if (error) return { error: "Nepodařilo se uložit" }
+
+  revalidatePath(`/app/vyplaty/${auth.akceMesic}`)
+  return { success: true, serverValue: parsed.data }
+}
+
+/**
+ * Update dochazka.extra_odmena_kc. Pokud dochazka řádek neexistuje
+ * (brigádník nemá ani příchod ani odchod), vytvoříme ho s NULL časy
+ * a jen extra_odmena_kc.
+ */
+export async function upsertDyskoKc(
+  prirazeniId: string,
+  dysko: number | null,
+): Promise<UpsertResult> {
+  const auth = await authorizeAndCheckLock(prirazeniId)
+  if (!auth.ok) return { error: auth.error }
+  if (auth.isLocked) {
+    return { error: "Měsíc je uzamčený", locked: true }
+  }
+
+  const parsed = dyskoSchema.safeParse(dysko)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatné dýško" }
+  }
+
+  const admin = createAdminClient()
+
+  // Najdi prirazeni → akce_id, brigadnik_id (potřebné pro insert)
+  const { data: prir } = await admin
+    .from("prirazeni")
+    .select("akce_id, brigadnik_id")
+    .eq("id", prirazeniId)
+    .maybeSingle()
+  if (!prir) return { error: "Přiřazení nenalezeno" }
+
+  const { data: existing } = await admin
+    .from("dochazka")
+    .select("id")
+    .eq("prirazeni_id", prirazeniId)
+    .maybeSingle()
+
+  if (existing) {
+    const { error } = await admin
+      .from("dochazka")
+      .update({ extra_odmena_kc: parsed.data })
+      .eq("id", existing.id)
+    if (error) return { error: "Nepodařilo se uložit" }
+  } else {
+    const { error } = await admin.from("dochazka").insert({
+      prirazeni_id: prirazeniId,
+      akce_id: prir.akce_id as string,
+      brigadnik_id: prir.brigadnik_id as string,
+      prichod: null,
+      odchod: null,
+      hodnoceni: null,
+      poznamka: null,
+      extra_odmena_kc: parsed.data,
+    })
+    if (error) return { error: "Nepodařilo se uložit" }
+  }
+
+  revalidatePath(`/app/vyplaty/${auth.akceMesic}`)
+  return { success: true, serverValue: parsed.data }
 }

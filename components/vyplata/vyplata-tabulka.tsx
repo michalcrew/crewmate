@@ -5,12 +5,17 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import type {
-  VyplataAkce,
-  VyplataCell,
-  VyplataMesicData,
-  VyplataRow,
+import {
+  upsertSazbaHodinova,
+  upsertDyskoKc,
+  type VyplataAkce,
+  type VyplataCell,
+  type VyplataMesicData,
+  type VyplataRow,
 } from "@/lib/actions/vyplata"
+import { EditableNumberCell } from "@/components/vyplata/editable-number-cell"
+
+const COLS_PER_AKCE = 6 // příchod, odchod, hodiny, sazba, dýško, celkem
 
 interface Props {
   data: VyplataMesicData
@@ -75,6 +80,7 @@ export function VyplataTabulka({ data }: Props) {
 
   const akceColumns = filteredAkce
   const totalAkceColumns = akceColumns.length
+  const isLocked = !!data.uzamceno
 
   return (
     <Card>
@@ -128,7 +134,7 @@ export function VyplataTabulka({ data }: Props) {
                 {akceColumns.map((a) => (
                   <th
                     key={a.id}
-                    colSpan={5}
+                    colSpan={COLS_PER_AKCE}
                     className="border-b border-r px-2 py-1.5 text-center text-xs font-medium"
                   >
                     <div className="truncate max-w-[260px] mx-auto" title={a.nazev}>
@@ -158,10 +164,15 @@ export function VyplataTabulka({ data }: Props) {
                 <>
                   <SectionHeader
                     label="DPP"
-                    colSpan={1 + totalAkceColumns * 5 + 1}
+                    colSpan={1 + totalAkceColumns * COLS_PER_AKCE + 1}
                   />
                   {dppVisible.map((r) => (
-                    <DataRow key={r.brigadnikId} row={r} akce={akceColumns} />
+                    <DataRow
+                      key={r.brigadnikId}
+                      row={r}
+                      akce={akceColumns}
+                      locked={isLocked}
+                    />
                   ))}
                   <TotalRow
                     label="Celkem DPP (výplaty)"
@@ -177,10 +188,15 @@ export function VyplataTabulka({ data }: Props) {
                 <>
                   <SectionHeader
                     label="OSVČ"
-                    colSpan={1 + totalAkceColumns * 5 + 1}
+                    colSpan={1 + totalAkceColumns * COLS_PER_AKCE + 1}
                   />
                   {osvcVisible.map((r) => (
-                    <DataRow key={r.brigadnikId} row={r} akce={akceColumns} />
+                    <DataRow
+                      key={r.brigadnikId}
+                      row={r}
+                      akce={akceColumns}
+                      locked={isLocked}
+                    />
                   ))}
                   <TotalRow
                     label="Celkem OSVČ (fakturace)"
@@ -195,7 +211,7 @@ export function VyplataTabulka({ data }: Props) {
               {dppVisible.length === 0 && osvcVisible.length === 0 && (
                 <tr>
                   <td
-                    colSpan={1 + totalAkceColumns * 5 + 1}
+                    colSpan={1 + totalAkceColumns * COLS_PER_AKCE + 1}
                     className="py-8 text-center text-muted-foreground text-sm"
                   >
                     Žádní brigádníci po aplikaci filtrů.
@@ -223,6 +239,9 @@ function SubHeader() {
         Hod.
       </th>
       <th className="border-b px-2 py-1.5 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+        Sazba
+      </th>
+      <th className="border-b px-2 py-1.5 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
         Dýško
       </th>
       <th className="border-b border-r px-2 py-1.5 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
@@ -248,9 +267,11 @@ function SectionHeader({ label, colSpan }: { label: string; colSpan: number }) {
 function DataRow({
   row,
   akce,
+  locked,
 }: {
   row: VyplataRow
   akce: VyplataAkce[]
+  locked: boolean
 }) {
   return (
     <tr className="hover:bg-muted/30">
@@ -264,7 +285,7 @@ function DataRow({
       </td>
       {akce.map((a) => {
         const c = row.cells[a.id]
-        return <Cell key={a.id} cell={c} />
+        return <Cell key={a.id} cell={c} locked={locked} />
       })}
       <td className="sticky right-0 z-10 bg-background border-b border-l px-3 py-2 text-right font-semibold whitespace-nowrap">
         {fmtKc(row.rowTotal)}
@@ -273,10 +294,17 @@ function DataRow({
   )
 }
 
-function Cell({ cell }: { cell: VyplataCell | undefined }) {
+function Cell({
+  cell,
+  locked,
+}: {
+  cell: VyplataCell | undefined
+  locked: boolean
+}) {
   if (!cell) {
     return (
       <>
+        <EmptyCell />
         <EmptyCell />
         <EmptyCell />
         <EmptyCell />
@@ -296,10 +324,25 @@ function Cell({ cell }: { cell: VyplataCell | undefined }) {
       <td className="border-b px-2 py-2 text-center text-xs tabular-nums whitespace-nowrap">
         {fmtHod(cell.hodinCelkem)}
       </td>
-      <td className="border-b px-2 py-2 text-center text-xs tabular-nums whitespace-nowrap text-muted-foreground">
-        {cell.extraOdmenaKc && cell.extraOdmenaKc > 0
-          ? fmtKc(cell.extraOdmenaKc)
-          : "—"}
+      <td className="border-b px-1 py-1 whitespace-nowrap min-w-[80px]">
+        <EditableNumberCell
+          value={cell.sazbaHodinova}
+          formatDisplay={(v) => fmtKc(v ?? 0).replace(" Kč", "")}
+          inputSuffix="Kč/h"
+          emptyDisplay="— Kč/h"
+          ariaLabel="Sazba Kč/hod"
+          disabled={locked}
+          onSave={(v) => upsertSazbaHodinova(cell.prirazeniId, v)}
+        />
+      </td>
+      <td className="border-b px-1 py-1 whitespace-nowrap min-w-[80px]">
+        <EditableNumberCell
+          value={cell.extraOdmenaKc}
+          formatDisplay={(v) => (v && v > 0 ? fmtKc(v) : "—")}
+          ariaLabel="Dýško"
+          disabled={locked}
+          onSave={(v) => upsertDyskoKc(cell.prirazeniId, v)}
+        />
       </td>
       <td
         className={cn(
@@ -360,7 +403,7 @@ function TotalRow({
       {akce.map((a) => (
         <td
           key={a.id}
-          colSpan={5}
+          colSpan={COLS_PER_AKCE}
           className="border-b-2 border-t border-r px-2 py-2 text-right text-xs tabular-nums whitespace-nowrap"
         >
           {fmtKc(perAkce.get(a.id) ?? 0)}
