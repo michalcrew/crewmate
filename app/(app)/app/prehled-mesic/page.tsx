@@ -25,7 +25,7 @@ async function getMesicniData(mesic: string) {
       id, prichod, odchod, hodin_celkem, hodnoceni,
       brigadnik:brigadnici(id, jmeno, prijmeni),
       akce:akce!inner(id, nazev, datum),
-      prirazeni_rel:prirazeni!inner(pozice)
+      prirazeni_rel:prirazeni!inner(role)
     `)
     .gte("akce.datum", start)
     .lt("akce.datum", end)

@@ -72,7 +72,7 @@ export type AkceWithPrirazeni = {
   prirazeni: Array<{
     id: string
     brigadnik_id: string
-    pozice: string | null
+    role: string | null
     status: string
     brigadnik: { id: string; jmeno: string; prijmeni: string } | null
   }>

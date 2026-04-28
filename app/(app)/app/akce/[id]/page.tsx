@@ -209,7 +209,7 @@ export default async function AkceDetailPage({
                 <TableRow>
                   <TableHead>Brigádník</TableHead>
                   <TableHead>Vlastník</TableHead>
-                  <TableHead>Pozice</TableHead>
+                  <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Stav</TableHead>
                   <TableHead>Příchod</TableHead>
@@ -246,7 +246,7 @@ export default async function AkceDetailPage({
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{p.pozice || "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{(p as { role?: string | null }).role || "—"}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={
                           p.status === "prirazeny" ? "bg-green-500/10 text-green-500 border-green-500/20" :

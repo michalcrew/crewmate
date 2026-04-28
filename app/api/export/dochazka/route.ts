@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       prichod, odchod, hodin_celkem, hodnoceni, poznamka,
       brigadnik:brigadnici(jmeno, prijmeni, typ_brigadnika),
       akce:akce!inner(nazev, datum),
-      prirazeni_rel:prirazeni!inner(pozice, status)
+      prirazeni_rel:prirazeni!inner(role, status)
     `)
 
   // Apply month filter if provided
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     poznamka: string | null
     brigadnik: { jmeno: string; prijmeni: string; typ_brigadnika: string | null } | null
     akce: { nazev: string; datum: string } | null
-    prirazeni_rel: { pozice: string | null; status: string | null } | null
+    prirazeni_rel: { role: string | null; status: string | null } | null
   }
   const rows = (data ?? []) as unknown as Row[]
 

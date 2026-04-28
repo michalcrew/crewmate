@@ -13,7 +13,7 @@ import { getBrigadnikAkce } from "@/lib/actions/brigadnici"
  *
  * - Budoucí (ASC) nahoře, Historie (DESC, LIMIT 100) dole.
  * - Každý řádek: Datum, Název akce + „Zrušena" tag, Zakázka (link nebo dash),
- *   Pozice, Status badge (prirazeny/nahradnik/vypadl).
+ *   Role (brigadnik/koordinator), Status badge (prirazeny/nahradnik/vypadl).
  */
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -26,7 +26,7 @@ type AkceRow = {
   id: string
   akce_id: string | null
   status: string
-  pozice: string | null
+  role: string | null
   poradi_nahradnik: number | null
   akce: {
     id: string
@@ -62,7 +62,7 @@ function AkceTable({ rows, emptyText }: { rows: AkceRow[]; emptyText: string }) 
           <TableHead className="w-[120px]">Datum</TableHead>
           <TableHead>Název akce</TableHead>
           <TableHead>Zakázka</TableHead>
-          <TableHead className="w-[120px]">Pozice</TableHead>
+          <TableHead className="w-[120px]">Role</TableHead>
           <TableHead className="w-[120px]">Status</TableHead>
         </TableRow>
       </TableHeader>
@@ -89,7 +89,7 @@ function AkceTable({ rows, emptyText }: { rows: AkceRow[]; emptyText: string }) 
                 <NabidkaCell nabidka={r.akce.nabidka} />
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
-                {r.pozice ?? "—"}
+                {r.role ?? "—"}
               </TableCell>
               <TableCell>
                 <Badge variant="outline" className={`${stav.className} text-xs`}>
