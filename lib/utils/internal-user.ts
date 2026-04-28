@@ -23,7 +23,7 @@ export async function resolveInternalUser(
 ): Promise<{ id: string; role: string; email: string | null } | null> {
   const admin = client ?? createAdminClient()
 
-  const { data: primary } = await admin
+  const { data: primary, error: primaryErr } = await admin
     .from("users")
     .select("id, role, email")
     .eq("auth_user_id", authUserId)
@@ -33,23 +33,46 @@ export async function resolveInternalUser(
     return primary as { id: string; role: string; email: string | null }
   }
 
-  if (!authEmail) return null
+  if (!authEmail) {
+    console.error("[resolveInternalUser] no row by auth_user_id, no email available", {
+      authUserId,
+      primaryErr: primaryErr?.message,
+    })
+    return null
+  }
 
   const normalizedEmail = authEmail.trim().toLowerCase()
-  const { data: byEmail } = await admin
+  const { data: byEmail, error: emailErr } = await admin
     .from("users")
     .select("id, role, email")
     .ilike("email", normalizedEmail)
     .maybeSingle()
 
-  if (!byEmail) return null
+  if (!byEmail) {
+    console.error("[resolveInternalUser] no row by auth_user_id nor email", {
+      authUserId,
+      authEmail: normalizedEmail,
+      primaryErr: primaryErr?.message,
+      emailErr: emailErr?.message,
+    })
+    return null
+  }
 
   // Self-heal: aktualizuj auth_user_id na aktuální auth.uid().
   // Best-effort; pokud selže, vrať záznam i tak (další volání to zkusí znovu).
-  await admin
+  const { error: updErr } = await admin
     .from("users")
     .update({ auth_user_id: authUserId })
     .eq("id", (byEmail as { id: string }).id)
+
+  if (updErr) {
+    console.error("[resolveInternalUser] self-heal update failed", {
+      authUserId,
+      authEmail: normalizedEmail,
+      userId: (byEmail as { id: string }).id,
+      updErr: updErr.message,
+    })
+  }
 
   return byEmail as { id: string; role: string; email: string | null }
 }

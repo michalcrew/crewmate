@@ -53,7 +53,7 @@ export async function addHodnoceni(
   if (!user) return { error: "Nepřihlášen" }
 
   const internalUserId = await getInternalUserId(user.id, user.email)
-  if (!internalUserId) return { error: "Interní uživatel nenalezen" }
+  if (!internalUserId) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
 
   const { data, error } = await supabase
     .from("hodnoceni_brigadnika")
@@ -114,7 +114,7 @@ export async function updateHodnoceni(
   if (!user) return { error: "Nepřihlášen" }
 
   const internalUserId = await getInternalUserId(user.id, user.email)
-  if (!internalUserId) return { error: "Interní uživatel nenalezen" }
+  if (!internalUserId) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
 
   const { data: current, error: loadErr } = await supabase
     .from("hodnoceni_brigadnika")
@@ -179,7 +179,7 @@ export async function deleteHodnoceni(id: string): Promise<ActionResult> {
   if (!user) return { error: "Nepřihlášen" }
 
   const internalUserId = await getInternalUserId(user.id, user.email)
-  if (!internalUserId) return { error: "Interní uživatel nenalezen" }
+  if (!internalUserId) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
 
   const { data: current } = await supabase
     .from("hodnoceni_brigadnika")
