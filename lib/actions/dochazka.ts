@@ -254,6 +254,14 @@ export async function upsertDochazkaField(
       pin_kod: akceData?.pin_kod ?? null,
     })
     if (!pinOk) return { error: "Neplatný PIN" }
+    // Self-heal: pokud byl PIN ověřen jen přes plaintext, oprav hash.
+    await maybeRepairPinHash({
+      pin: editor.pin,
+      storedHash: akceData?.pin_hash ?? null,
+      updateHash: async (newHash) => {
+        await supabase.from("akce").update({ pin_hash: newHash }).eq("id", akceId)
+      },
+    })
     editorId = koordinatorFingerprint(editor.pin, akceId)
     if (!checkRateLimit(`save:koord:${editorId}`, 60, 60_000)) {
       return { error: "Příliš mnoho zápisů. Zkuste to za chvíli." }
@@ -639,35 +647,97 @@ export async function getKoordinatorDochazka(akceId: string, pin: string) {
     return { error: "Neplatný PIN" as const }
   }
 
-  const { data: entries } = await supabase
+  // Self-heal: pokud byl PIN ověřen jen přes plaintext, oprav hash.
+  await maybeRepairPinHash({
+    pin,
+    storedHash: akce.pin_hash,
+    updateHash: async (newHash) => {
+      await supabase.from("akce").update({ pin_hash: newHash }).eq("id", akceId)
+    },
+  })
+
+  // Separate queries místo embedded relation — robustnější proti
+  // PostgREST schema cache (pokud schema cache nestihne refresh, embedded
+  // relation by mohla vrátit prázdné pole pro reálně existující data).
+  const { data: prirazeni } = await supabase
     .from("prirazeni")
-    .select(`
-      id, akce_id, brigadnik_id, pozice, status, poradi_nahradnik,
-      brigadnik:brigadnici(id, jmeno, prijmeni, telefon),
-      dochazka(id, prichod, odchod, hodin_celkem, hodnoceni, poznamka)
-    `)
+    .select("id, akce_id, brigadnik_id, pozice, status, poradi_nahradnik")
     .eq("akce_id", akceId)
     .order("created_at", { ascending: true })
 
-  let docStatusMap = new Map<string, string>()
-  if (akce.nabidka_id && entries && entries.length > 0) {
-    const brigadnikIds = entries.map((e) => e.brigadnik_id as string)
-    const { data: statuses } = await supabase
-      .from("v_brigadnik_zakazka_status")
-      .select("brigadnik_id, dokumentacni_stav")
-      .eq("nabidka_id", akce.nabidka_id)
-      .in("brigadnik_id", brigadnikIds)
-    if (statuses) {
-      docStatusMap = new Map(
-        statuses.map((s) => [s.brigadnik_id as string, s.dokumentacni_stav as string]),
-      )
-    }
+  const prirazeniRows = prirazeni ?? []
+  const prirazeniIds = prirazeniRows.map((p) => p.id as string)
+  const brigadnikIds = prirazeniRows.map((p) => p.brigadnik_id as string)
+
+  // Fetch dochazka, brigadnici, dokumentacni status paralelně
+  const [
+    dochazkaRes,
+    brigadniciRes,
+    statusesRes,
+  ] = await Promise.all([
+    prirazeniIds.length
+      ? supabase
+          .from("dochazka")
+          .select("id, prirazeni_id, prichod, odchod, hodin_celkem, hodnoceni, poznamka")
+          .in("prirazeni_id", prirazeniIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; prirazeni_id: string; prichod: string | null; odchod: string | null; hodin_celkem: number | null; hodnoceni: number | null; poznamka: string | null }> }),
+    brigadnikIds.length
+      ? supabase
+          .from("brigadnici")
+          .select("id, jmeno, prijmeni, telefon")
+          .in("id", brigadnikIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; jmeno: string; prijmeni: string; telefon: string | null }> }),
+    akce.nabidka_id && brigadnikIds.length
+      ? supabase
+          .from("v_brigadnik_zakazka_status")
+          .select("brigadnik_id, dokumentacni_stav")
+          .eq("nabidka_id", akce.nabidka_id)
+          .in("brigadnik_id", brigadnikIds)
+      : Promise.resolve({ data: [] as Array<{ brigadnik_id: string; dokumentacni_stav: string }> }),
+  ])
+
+  const dochazkaByPr = new Map<string, { id: string; prichod: string | null; odchod: string | null; hodin_celkem: number | null; hodnoceni: number | null; poznamka: string | null }>()
+  for (const d of dochazkaRes.data ?? []) {
+    dochazkaByPr.set(d.prirazeni_id as string, {
+      id: d.id as string,
+      prichod: d.prichod as string | null,
+      odchod: d.odchod as string | null,
+      hodin_celkem: d.hodin_celkem as number | null,
+      hodnoceni: d.hodnoceni as number | null,
+      poznamka: d.poznamka as string | null,
+    })
   }
 
-  const enriched = (entries ?? []).map((e) => ({
-    ...e,
-    dokumentacni_stav: docStatusMap.get(e.brigadnik_id as string) ?? "nevyplnene_udaje",
-  }))
+  const brigadnikById = new Map<string, { id: string; jmeno: string; prijmeni: string; telefon: string | null }>()
+  for (const b of brigadniciRes.data ?? []) {
+    brigadnikById.set(b.id as string, {
+      id: b.id as string,
+      jmeno: b.jmeno as string,
+      prijmeni: b.prijmeni as string,
+      telefon: (b.telefon as string | null) ?? null,
+    })
+  }
+
+  const docStatusMap = new Map<string, string>()
+  for (const s of statusesRes.data ?? []) {
+    docStatusMap.set(s.brigadnik_id as string, s.dokumentacni_stav as string)
+  }
+
+  const enriched = prirazeniRows.map((p) => {
+    const brigadnikId = p.brigadnik_id as string
+    const dochazkaRow = dochazkaByPr.get(p.id as string)
+    return {
+      id: p.id as string,
+      akce_id: p.akce_id as string,
+      brigadnik_id: brigadnikId,
+      pozice: p.pozice as string | null,
+      status: p.status as string,
+      poradi_nahradnik: p.poradi_nahradnik as number | null,
+      brigadnik: brigadnikById.get(brigadnikId) ?? null,
+      dochazka: dochazkaRow ? [dochazkaRow] : [],
+      dokumentacni_stav: docStatusMap.get(brigadnikId) ?? "nevyplnene_udaje",
+    }
+  })
 
   return {
     success: true as const,
