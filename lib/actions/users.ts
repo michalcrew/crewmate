@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { z } from "zod"
 import { sanitizePodpis } from "@/lib/utils/podpis-sanitize"
 import { sanitizeError } from "@/lib/utils/error-sanitizer"
+import { resolveInternalUser } from "@/lib/utils/internal-user"
 import { updateUserPodpisSchema } from "@/lib/schemas/dotaznik"
 
 export async function getUsers() {
@@ -38,27 +39,9 @@ export async function getCurrentUserRole() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  const { data } = await supabase
-    .from("users")
-    .select("role")
-    .eq("auth_user_id", user.id)
-    .single()
-
-  if (data?.role) return data.role
-
-  // MD-1 fallback: pokud RLS SELECT vrátí null (edge case se stale session
-  // cookies nebo race při auth rehydrataci), role by byla null a admin by
-  // byl mylně považován za non-admin. Admin client fallback pattern z
-  // getUsers() + updateUserPodpis() — auth check proběhl výš (user != null),
-  // takže je bezpečné použít service role pro self-lookup podle auth_user_id.
   const admin = createAdminClient()
-  const { data: fallback } = await admin
-    .from("users")
-    .select("role")
-    .eq("auth_user_id", user.id)
-    .single()
-
-  return (fallback as { role?: string } | null)?.role ?? null
+  const internalUser = await resolveInternalUser(user.id, user.email, admin)
+  return internalUser?.role ?? null
 }
 
 const createUserSchema = z.object({
@@ -129,17 +112,8 @@ export async function updateUserPodpis(
 
   const sanitized = sanitizePodpis(parsed.data.podpis)
 
-  // HF4c: RLS lookup fallback — pattern z getUsers().
-  // Auth check už proběhl výše (user != null), takže je bezpečné
-  // použít admin client pokud RLS SELECT vrátí prázdno. Filter
-  // auth_user_id = user.id zajistí self-only write.
   const admin = createAdminClient()
-  const { data: internalUser } = await admin
-    .from("users")
-    .select("id")
-    .eq("auth_user_id", user.id)
-    .single()
-
+  const internalUser = await resolveInternalUser(user.id, user.email, admin)
   if (!internalUser) return { error: "Uživatel nenalezen" }
 
   const { error } = await admin
@@ -245,12 +219,7 @@ export async function updateUserSazba(
 
   if (error) return { error: sanitizeError(error, "updateUserSazba") }
 
-  // Actor = internal user id
-  const { data: actor } = await admin
-    .from("users")
-    .select("id")
-    .eq("auth_user_id", user.id)
-    .single()
+  const actor = await resolveInternalUser(user.id, user.email, admin)
 
   await admin.from("historie").insert({
     user_id: userId, // afected
@@ -258,7 +227,7 @@ export async function updateUserSazba(
     popis: `Hodinová sazba změněna (${(before as { jmeno: string }).jmeno} ${(before as { prijmeni: string }).prijmeni})`,
     metadata: {
       user_id_affected: userId,
-      actor_user_id: (actor as { id?: string } | null)?.id ?? null,
+      actor_user_id: actor?.id ?? null,
       old_sazba: (before as { sazba_kc_hod: number | null }).sazba_kc_hod,
       new_sazba: parsed.data,
     },
@@ -282,16 +251,12 @@ export async function getUserSazba(
   if (!user) return { error: "Nepřihlášen" }
 
   const admin = createAdminClient()
-  const { data: me } = await admin
-    .from("users")
-    .select("id, role")
-    .eq("auth_user_id", user.id)
-    .single()
+  const me = await resolveInternalUser(user.id, user.email, admin)
 
   if (!me) return { error: "Profil nenalezen" }
 
-  const meId = (me as { id: string }).id
-  const meRole = (me as { role: string }).role
+  const meId = me.id
+  const meRole = me.role
   const targetId = userId ?? meId
 
   if (targetId !== meId && meRole !== "admin") {
