@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { resolveInternalUser } from "@/lib/utils/internal-user"
 import { getBrigadnici } from "./brigadnici"
 import {
   ALERT_FILTER_KEYS,
@@ -413,15 +414,11 @@ export async function getCurrentUserRole(): Promise<{
   if (!user) return null
 
   const admin = createAdminClient()
-  const { data } = await admin
-    .from("users")
-    .select("id, role")
-    .eq("auth_user_id", user.id)
-    .single()
+  const internalUser = await resolveInternalUser(user.id, user.email, admin)
 
-  if (!data) return null
-  const role = (data as { role: string }).role
+  if (!internalUser) return null
+  const role = internalUser.role
   if (role !== "admin" && role !== "naborar") return null
 
-  return { userId: (data as { id: string }).id, role: role as UserRole }
+  return { userId: internalUser.id, role: role as UserRole }
 }

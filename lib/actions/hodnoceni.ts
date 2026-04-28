@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { resolveInternalUserId } from "@/lib/utils/internal-user"
 import {
   addHodnoceniSchema,
   updateHodnoceniSchema,
@@ -24,27 +24,8 @@ type ActionResult<T = unknown> =
   | ({ success: true } & T)
   | { error: string }
 
-/**
- * Pattern: RLS admin fallback pro internal user lookup (handoff sekce 10.1).
- * Vrací internalUser.id nebo null (volající má error handling).
- */
-async function getInternalUserId(authUserId: string): Promise<string | null> {
-  const supabase = await createClient()
-  const { data: primary } = await supabase
-    .from("users")
-    .select("id")
-    .eq("auth_user_id", authUserId)
-    .single()
-  if (primary?.id) return primary.id
-
-  const admin = createAdminClient()
-  const { data: fallback } = await admin
-    .from("users")
-    .select("id")
-    .eq("auth_user_id", authUserId)
-    .single()
-  return fallback?.id ?? null
-}
+// Internal user lookup s email fallbackem (lib/utils/internal-user.ts).
+const getInternalUserId = resolveInternalUserId
 
 /**
  * US-1C-1: Přidat hodnocení. akce_id NULLABLE (D-F0016-01).
@@ -71,7 +52,7 @@ export async function addHodnoceni(
   } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  const internalUserId = await getInternalUserId(user.id)
+  const internalUserId = await getInternalUserId(user.id, user.email)
   if (!internalUserId) return { error: "Interní uživatel nenalezen" }
 
   const { data, error } = await supabase
@@ -132,7 +113,7 @@ export async function updateHodnoceni(
   } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  const internalUserId = await getInternalUserId(user.id)
+  const internalUserId = await getInternalUserId(user.id, user.email)
   if (!internalUserId) return { error: "Interní uživatel nenalezen" }
 
   const { data: current, error: loadErr } = await supabase
@@ -197,7 +178,7 @@ export async function deleteHodnoceni(id: string): Promise<ActionResult> {
   } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  const internalUserId = await getInternalUserId(user.id)
+  const internalUserId = await getInternalUserId(user.id, user.email)
   if (!internalUserId) return { error: "Interní uživatel nenalezen" }
 
   const { data: current } = await supabase
