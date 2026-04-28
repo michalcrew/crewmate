@@ -43,7 +43,7 @@ export function AddAkceDialog({ nabidkaId, defaultNazev, defaultMisto, defaultKl
         <DialogHeader>
           <DialogTitle>Nová akce</DialogTitle>
         </DialogHeader>
-        <form action={formAction} className="space-y-4">
+        <form action={formAction} className="space-y-4" noValidate>
           <div className="space-y-2">
             <Label htmlFor="aa-nazev">Název akce *</Label>
             <Input id="aa-nazev" name="nazev" defaultValue={defaultNazev ?? ""} required />

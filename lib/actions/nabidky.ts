@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { normalizeTime } from "@/lib/utils/time"
 import { z } from "zod"
 
 // ================================================================
@@ -256,8 +257,8 @@ export async function createNabidka(formData: FormData) {
     const { error: akceError } = await supabase.from("akce").insert({
       nazev: data.nazev,
       datum: data.akce_datum,
-      cas_od: data.akce_cas_od || null,
-      cas_do: data.akce_cas_do || null,
+      cas_od: normalizeTime(data.akce_cas_od),
+      cas_do: normalizeTime(data.akce_cas_do),
       misto: data.akce_misto || data.misto || null,
       klient: data.klient || null,
       nabidka_id: inserted.id,
@@ -348,8 +349,8 @@ export async function updateNabidka(id: string, formData: FormData) {
         nazev: parsed.data.nazev ?? current.nazev,
         datum: datumStr,
         misto: String(akce_misto ?? parsed.data.misto ?? current.misto ?? "").trim() || null,
-        cas_od: String(akce_cas_od ?? "").trim() || null,
-        cas_do: String(akce_cas_do ?? "").trim() || null,
+        cas_od: normalizeTime(akce_cas_od),
+        cas_do: normalizeTime(akce_cas_do),
         klient: parsed.data.klient ?? current.klient ?? null,
         pocet_lidi: akce_pocet_lidi ? Number(akce_pocet_lidi) : parsed.data.pocet_lidi ?? null,
       }

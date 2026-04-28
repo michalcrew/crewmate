@@ -87,7 +87,7 @@ export function EditNabidkaDialog({ nabidka, akce }: Props) {
         <DialogHeader>
           <DialogTitle>Upravit zakázku</DialogTitle>
         </DialogHeader>
-        <form action={formAction} className="space-y-4">
+        <form action={formAction} className="space-y-4" noValidate>
           <div className="space-y-2">
             <Label htmlFor="en-nazev">Název</Label>
             <Input id="en-nazev" name="nazev" defaultValue={nabidka.nazev} required />

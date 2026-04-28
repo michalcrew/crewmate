@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getVocativeName } from "@/lib/utils/vocative"
 import { resolveInternalUserId } from "@/lib/utils/internal-user"
+import { normalizeTime } from "@/lib/utils/time"
 import { z } from "zod"
 
 const akceSchema = z.object({
@@ -230,8 +231,8 @@ export async function createAkce(formData: FormData) {
   const pinPair = await generatePinPair()
   const { data: inserted, error } = await supabase.from("akce").insert({
     ...parsed.data,
-    cas_od: parsed.data.cas_od || null,
-    cas_do: parsed.data.cas_do || null,
+    cas_od: normalizeTime(parsed.data.cas_od),
+    cas_do: normalizeTime(parsed.data.cas_do),
     nabidka_id: parsed.data.nabidka_id || null,
     pin_kod: pinPair.plaintext,
     pin_hash: pinPair.hash,

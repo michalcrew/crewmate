@@ -29,7 +29,7 @@ export function NovaAkceForm({ nabidky }: Props) {
     <Card>
       <CardHeader><CardTitle>Základní údaje</CardTitle></CardHeader>
       <CardContent>
-        <form action={formAction} className="space-y-4">
+        <form action={formAction} className="space-y-4" noValidate>
           <div className="space-y-2">
             <Label htmlFor="nazev">Název akce *</Label>
             <Input id="nazev" name="nazev" placeholder="např. Sasazu — sobota 19.4." required />
