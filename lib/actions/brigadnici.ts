@@ -509,7 +509,7 @@ export async function setDokumentacniStavManual(
 
   const admin = createAdminClient()
   const internalUser = await resolveInternalUser(user.id, user.email, admin)
-  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+  if (!internalUser) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
 
   const rok = new Date().getFullYear()
 
@@ -639,7 +639,7 @@ export async function updateBrigadnikCitliveUdaje(
 
   const admin = createAdminClient()
   const internalUser = await resolveInternalUser(user.id, user.email, admin)
-  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+  if (!internalUser) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
 
   const changedFields: string[] = []
   const update: Record<string, string> = {}
@@ -965,7 +965,7 @@ export async function blokovatBrigadnika(
 
   const admin = createAdminClient()
   const internalUser = await resolveInternalUser(user.id, user.email, admin)
-  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+  if (!internalUser) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
 
   const { error } = await admin
     .from("brigadnici")
@@ -1004,7 +1004,7 @@ export async function odblokovatBrigadnika(
 
   const admin = createAdminClient()
   const internalUser = await resolveInternalUser(user.id, user.email, admin)
-  if (!internalUser) return { error: "Interní uživatel nenalezen" }
+  if (!internalUser) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
 
   const { error } = await admin
     .from("brigadnici")

@@ -45,7 +45,7 @@ async function requireAdmin(): Promise<AdminRoleCheck> {
   const admin = createAdminClient()
   const me = await resolveInternalUser(user.id, user.email, admin)
 
-  if (!me) return { ok: false, error: "Interní uživatel nenalezen" }
+  if (!me) return { ok: false, error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
   if (me.role !== "admin") {
     return { ok: false, error: "Nemáte oprávnění (jen admin)" }
   }

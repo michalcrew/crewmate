@@ -547,7 +547,7 @@ export async function zrusitAkci(
 
   // Internal user id pro audit (RLS fallback viz resolveInternalUserId)
   const internalUserId = await resolveInternalUserId(user.id, user.email)
-  if (!internalUserId) return { error: "Interní uživatel nenalezen" }
+  if (!internalUserId) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
 
   // Načti nabidka_id pro revalidatePath
   const { data: akceBefore } = await supabase
@@ -601,7 +601,7 @@ export async function updateAkceStav(
   if (!user) return { error: "Nepřihlášen" }
 
   const internalUserId = await resolveInternalUserId(user.id, user.email)
-  if (!internalUserId) return { error: "Interní uživatel nenalezen" }
+  if (!internalUserId) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
 
   const { data: current } = await supabase
     .from("akce").select("id, nazev, stav, nabidka_id").eq("id", akceId).single()
