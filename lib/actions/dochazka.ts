@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { z } from "zod"
 import { createHash } from "crypto"
-import { verifyPin as checkPin } from "@/lib/utils/pin"
+import { verifyPin as checkPin, maybeRepairPinHash } from "@/lib/utils/pin"
 
 // Simple in-memory rate limiting (per process — sufficient for serverless)
 const pinAttempts = new Map<string, { count: number; resetAt: number }>()
@@ -44,6 +44,16 @@ export async function verifyPin(akceId: string, pin: string) {
   if (!data || !pinOk) {
     return { error: "Neplatný PIN" }
   }
+
+  // Self-heal: pokud byl PIN ověřen jen přes plaintext (hash chybí nebo
+  // neodpovídá), potichu přepočítej hash. Příští verify hned padne na hash.
+  await maybeRepairPinHash({
+    pin,
+    storedHash: data.pin_hash,
+    updateHash: async (newHash) => {
+      await supabase.from("akce").update({ pin_hash: newHash }).eq("id", akceId)
+    },
+  })
 
   return { success: true, akce: { id: data.id, nazev: data.nazev, datum: data.datum, cas_od: data.cas_od, cas_do: data.cas_do, misto: data.misto } }
 }
