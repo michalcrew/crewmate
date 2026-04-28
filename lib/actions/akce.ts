@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getVocativeName } from "@/lib/utils/vocative"
-import { resolveInternalUserId } from "@/lib/utils/internal-user"
+import { resolveInternalUser, resolveInternalUserId } from "@/lib/utils/internal-user"
 import { normalizeTime } from "@/lib/utils/time"
 import { z } from "zod"
 
@@ -304,66 +304,356 @@ export async function getAkcePrirazeni(akceId: string) {
   return data ?? []
 }
 
-export async function addPrirazeni(
-  akceId: string,
-  brigadnikId: string,
-  // pozice param je legacy — sloupec byl DROP v migraci
-  // 20260430000001_team_roles_and_rates. Hodnota se ignoruje, role se nastaví
-  // až v PR B (UI pro výběr brigadnik/koordinator). Default 'brigadnik' splňuje
-  // CHECK constraint prirazeni_role_required pro non-nahradnik statusy.
-  _pozice: string,
-  status: string = "prirazeny"
-) {
+/**
+ * PR C — addPrirazeni s role + status + snapshot sazby.
+ *
+ * Pravidla (Michal):
+ *  - status='prirazeny' MUSÍ mít role; sazba se snapshotuje ze zakázky podle role.
+ *  - status='nahradnik' je univerzální — role NULL, sazba NULL. Role/sazba se
+ *    určí až při povýšení (povysitNahradnika).
+ *  - Limit kapacity: 'prirazeny' s konkrétní rolí nesmí přesáhnout
+ *    akce.pocet_brigadniku resp. akce.pocet_koordinatoru. Náhradníky neomezujeme.
+ *  - Koordinátor jen pokud nabidka.sazba_koordinator IS NOT NULL.
+ *  - Editace jen pro akce.stav='planovana'.
+ */
+export async function addPrirazeni(args: {
+  akceId: string
+  brigadnikId: string
+  status: "prirazeny" | "nahradnik"
+  role?: "brigadnik" | "koordinator"
+}): Promise<{ success: true } | { error: string }> {
+  const { akceId, brigadnikId, status, role } = args
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
+
+  // Role check (admin nebo naborar) — resolveInternalUser
+  const internalUser = await resolveInternalUser(user.id, user.email)
+  if (!internalUser) return { error: "Interní uživatel nenalezen — zkontrolujte propojení účtu (kód U2)" }
+  if (!["admin", "naborar"].includes(internalUser.role)) {
+    return { error: "Nemáte oprávnění přiřazovat brigádníky" }
+  }
+
+  // Načti akci + zakázku
+  const { data: akce } = await supabase
+    .from("akce")
+    .select("id, nazev, stav, nabidka_id, pocet_brigadniku, pocet_koordinatoru")
+    .eq("id", akceId)
+    .single()
+  if (!akce) return { error: "Akce nenalezena" }
+  if (akce.stav !== "planovana") {
+    return { error: `Akci nelze upravovat (status: ${akce.stav})` }
+  }
 
   const insertRow: Record<string, unknown> = {
     akce_id: akceId,
     brigadnik_id: brigadnikId,
     status,
   }
-  if (status !== "nahradnik") {
-    insertRow.role = "brigadnik"
+
+  if (status === "prirazeny") {
+    if (!role) return { error: "Pro přiřazeného je třeba vybrat roli" }
+
+    // Načti zakázku kvůli sazbám
+    let sazbaBrigadnik: number | null = null
+    let sazbaKoordinator: number | null = null
+    if (akce.nabidka_id) {
+      const { data: nabidka } = await supabase
+        .from("nabidky")
+        .select("sazba_brigadnik, sazba_koordinator")
+        .eq("id", akce.nabidka_id)
+        .single()
+      sazbaBrigadnik = (nabidka as { sazba_brigadnik?: number | null } | null)?.sazba_brigadnik ?? null
+      sazbaKoordinator = (nabidka as { sazba_koordinator?: number | null } | null)?.sazba_koordinator ?? null
+    }
+
+    if (role === "koordinator" && sazbaKoordinator == null) {
+      return { error: "Tato zakázka nemá povoleného koordinátora" }
+    }
+
+    // Kapacita check
+    const { count } = await supabase
+      .from("prirazeni")
+      .select("id", { count: "exact", head: true })
+      .eq("akce_id", akceId)
+      .eq("status", "prirazeny")
+      .eq("role", role)
+    const limit = role === "koordinator"
+      ? (akce.pocet_koordinatoru ?? 0)
+      : (akce.pocet_brigadniku ?? 0)
+    if ((count ?? 0) >= limit) {
+      return {
+        error: role === "koordinator"
+          ? "Kapacita koordinátorů je již plná"
+          : "Kapacita brigádníků je již plná",
+      }
+    }
+
+    insertRow.role = role
+    insertRow.sazba_hodinova = role === "koordinator" ? sazbaKoordinator : sazbaBrigadnik
+  } else {
+    // nahradnik — universal
+    insertRow.role = null
+    insertRow.sazba_hodinova = null
+    // poradi_nahradnik = max + 1
+    const { data: existingNahr } = await supabase
+      .from("prirazeni")
+      .select("poradi_nahradnik")
+      .eq("akce_id", akceId)
+      .eq("status", "nahradnik")
+      .order("poradi_nahradnik", { ascending: false })
+      .limit(1)
+    const maxPoradi = (existingNahr?.[0] as { poradi_nahradnik?: number | null } | undefined)?.poradi_nahradnik ?? 0
+    insertRow.poradi_nahradnik = maxPoradi + 1
   }
 
   const { error } = await supabase.from("prirazeni").insert(insertRow)
-
   if (error) {
     if (error.code === "23505") return { error: "Brigádník je již přiřazený na tuto akci" }
     return { error: error.message }
   }
 
-  // Get internal user + brigadnik name for audit log
-  const { data: internalUser } = await supabase
-    .from("users")
-    .select("id")
-    .eq("auth_user_id", user.id)
-    .single()
-
+  // Audit
   const { data: brigadnik } = await supabase
     .from("brigadnici")
     .select("jmeno, prijmeni")
     .eq("id", brigadnikId)
     .single()
 
-  const { data: akce } = await supabase
-    .from("akce")
-    .select("nazev, nabidka_id")
-    .eq("id", akceId)
-    .single()
+  const roleLabel = status === "nahradnik"
+    ? "náhradník"
+    : role === "koordinator" ? "koordinátor" : "brigádník"
 
   await supabase.from("historie").insert({
     brigadnik_id: brigadnikId,
     akce_id: akceId,
-    nabidka_id: akce?.nabidka_id,
-    user_id: internalUser?.id,
-    typ: "prirazeni_zmena",
-    popis: `${brigadnik?.prijmeni} ${brigadnik?.jmeno} přiřazen/a na ${akce?.nazev ?? "akci"} (${status})`,
+    nabidka_id: akce.nabidka_id,
+    user_id: internalUser.id,
+    typ: "prirazeni_pridano",
+    popis: `${brigadnik?.prijmeni ?? ""} ${brigadnik?.jmeno ?? ""} přidán/a na akci "${akce.nazev}" jako ${roleLabel}`,
+    metadata: { status, role: insertRow.role, sazba: insertRow.sazba_hodinova },
   })
 
   revalidatePath(`/app/akce/${akceId}`)
-  if (akce?.nabidka_id) revalidatePath(`/app/nabidky/${akce.nabidka_id}`)
+  if (akce.nabidka_id) revalidatePath(`/app/nabidky/${akce.nabidka_id}`)
+  return { success: true }
+}
+
+/**
+ * PR C — Změna role přiřazeného brigádníka (toggle B↔K).
+ * Sazba se VŽDY přepíše ze zakázky podle nové role.
+ */
+export async function updatePrirazeniRole(
+  prirazeniId: string,
+  newRole: "brigadnik" | "koordinator"
+): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const internalUser = await resolveInternalUser(user.id, user.email)
+  if (!internalUser) return { error: "Interní uživatel nenalezen (kód U2)" }
+  if (!["admin", "naborar"].includes(internalUser.role)) {
+    return { error: "Nemáte oprávnění měnit roli" }
+  }
+
+  const { data: prir } = await supabase
+    .from("prirazeni")
+    .select("id, akce_id, brigadnik_id, role, status, sazba_hodinova")
+    .eq("id", prirazeniId)
+    .single()
+  if (!prir) return { error: "Přiřazení nenalezeno" }
+
+  if (prir.status !== "prirazeny") {
+    return { error: "Roli lze měnit jen u přiřazeného brigádníka, ne u náhradníka/vypadlého" }
+  }
+
+  const { data: akce } = await supabase
+    .from("akce")
+    .select("id, stav, nabidka_id, pocet_brigadniku, pocet_koordinatoru")
+    .eq("id", prir.akce_id)
+    .single()
+  if (!akce) return { error: "Akce nenalezena" }
+  if (akce.stav !== "planovana") {
+    return { error: `Akci nelze upravovat (status: ${akce.stav})` }
+  }
+
+  if (prir.role === newRole) {
+    return { success: true }
+  }
+
+  // Načti sazby
+  let sazbaBrigadnik: number | null = null
+  let sazbaKoordinator: number | null = null
+  if (akce.nabidka_id) {
+    const { data: nabidka } = await supabase
+      .from("nabidky")
+      .select("sazba_brigadnik, sazba_koordinator")
+      .eq("id", akce.nabidka_id)
+      .single()
+    sazbaBrigadnik = (nabidka as { sazba_brigadnik?: number | null } | null)?.sazba_brigadnik ?? null
+    sazbaKoordinator = (nabidka as { sazba_koordinator?: number | null } | null)?.sazba_koordinator ?? null
+  }
+
+  if (newRole === "koordinator" && sazbaKoordinator == null) {
+    return { error: "Tato zakázka nemá povoleného koordinátora" }
+  }
+
+  // Kapacita pro newRole
+  const { count } = await supabase
+    .from("prirazeni")
+    .select("id", { count: "exact", head: true })
+    .eq("akce_id", prir.akce_id)
+    .eq("status", "prirazeny")
+    .eq("role", newRole)
+  const limit = newRole === "koordinator"
+    ? (akce.pocet_koordinatoru ?? 0)
+    : (akce.pocet_brigadniku ?? 0)
+  if ((count ?? 0) >= limit) {
+    return {
+      error: newRole === "koordinator"
+        ? "Kapacita koordinátorů je již plná"
+        : "Kapacita brigádníků je již plná",
+    }
+  }
+
+  const novaSazba = newRole === "koordinator" ? sazbaKoordinator : sazbaBrigadnik
+
+  const { error: updErr } = await supabase
+    .from("prirazeni")
+    .update({ role: newRole, sazba_hodinova: novaSazba })
+    .eq("id", prirazeniId)
+  if (updErr) return { error: updErr.message }
+
+  // Audit
+  await supabase.from("historie").insert({
+    brigadnik_id: prir.brigadnik_id,
+    akce_id: prir.akce_id,
+    nabidka_id: akce.nabidka_id,
+    user_id: internalUser.id,
+    typ: "prirazeni_role_zmena",
+    popis: `Role změněna ${prir.role ?? "—"} → ${newRole}`,
+    metadata: {
+      role_before: prir.role,
+      role_after: newRole,
+      sazba_before: prir.sazba_hodinova,
+      sazba_after: novaSazba,
+    },
+  })
+
+  revalidatePath(`/app/akce/${prir.akce_id}`)
+  if (akce.nabidka_id) revalidatePath(`/app/nabidky/${akce.nabidka_id}`)
+  return { success: true }
+}
+
+/**
+ * PR C — Povýšit náhradníka na přiřazeného (B nebo K).
+ * Sazba se snapshotuje ze zakázky podle zvolené role.
+ */
+export async function povysitNahradnika(
+  prirazeniId: string,
+  newRole: "brigadnik" | "koordinator"
+): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const internalUser = await resolveInternalUser(user.id, user.email)
+  if (!internalUser) return { error: "Interní uživatel nenalezen (kód U2)" }
+  if (!["admin", "naborar"].includes(internalUser.role)) {
+    return { error: "Nemáte oprávnění povyšovat náhradníky" }
+  }
+
+  const { data: prir } = await supabase
+    .from("prirazeni")
+    .select("id, akce_id, brigadnik_id, role, status, poradi_nahradnik")
+    .eq("id", prirazeniId)
+    .single()
+  if (!prir) return { error: "Přiřazení nenalezeno" }
+  if (prir.status !== "nahradnik") {
+    return { error: "Tento brigádník není náhradník" }
+  }
+
+  const { data: akce } = await supabase
+    .from("akce")
+    .select("id, stav, nabidka_id, pocet_brigadniku, pocet_koordinatoru")
+    .eq("id", prir.akce_id)
+    .single()
+  if (!akce) return { error: "Akce nenalezena" }
+  if (akce.stav !== "planovana") {
+    return { error: `Akci nelze upravovat (status: ${akce.stav})` }
+  }
+
+  // Načti sazby
+  let sazbaBrigadnik: number | null = null
+  let sazbaKoordinator: number | null = null
+  if (akce.nabidka_id) {
+    const { data: nabidka } = await supabase
+      .from("nabidky")
+      .select("sazba_brigadnik, sazba_koordinator")
+      .eq("id", akce.nabidka_id)
+      .single()
+    sazbaBrigadnik = (nabidka as { sazba_brigadnik?: number | null } | null)?.sazba_brigadnik ?? null
+    sazbaKoordinator = (nabidka as { sazba_koordinator?: number | null } | null)?.sazba_koordinator ?? null
+  }
+
+  if (newRole === "koordinator" && sazbaKoordinator == null) {
+    return { error: "Tato zakázka nemá povoleného koordinátora" }
+  }
+
+  const { count } = await supabase
+    .from("prirazeni")
+    .select("id", { count: "exact", head: true })
+    .eq("akce_id", prir.akce_id)
+    .eq("status", "prirazeny")
+    .eq("role", newRole)
+  const limit = newRole === "koordinator"
+    ? (akce.pocet_koordinatoru ?? 0)
+    : (akce.pocet_brigadniku ?? 0)
+  if ((count ?? 0) >= limit) {
+    return {
+      error: newRole === "koordinator"
+        ? "Kapacita koordinátorů je již plná"
+        : "Kapacita brigádníků je již plná",
+    }
+  }
+
+  const novaSazba = newRole === "koordinator" ? sazbaKoordinator : sazbaBrigadnik
+
+  const { error: updErr } = await supabase
+    .from("prirazeni")
+    .update({
+      status: "prirazeny",
+      role: newRole,
+      sazba_hodinova: novaSazba,
+    })
+    .eq("id", prirazeniId)
+  if (updErr) return { error: updErr.message }
+
+  // Audit
+  const { data: brigadnik } = await supabase
+    .from("brigadnici")
+    .select("jmeno, prijmeni")
+    .eq("id", prir.brigadnik_id)
+    .single()
+
+  await supabase.from("historie").insert({
+    brigadnik_id: prir.brigadnik_id,
+    akce_id: prir.akce_id,
+    nabidka_id: akce.nabidka_id,
+    user_id: internalUser.id,
+    typ: "nahradnik_povysen",
+    popis: `${brigadnik?.prijmeni ?? ""} ${brigadnik?.jmeno ?? ""} povýšen/a z náhradníků jako ${newRole === "koordinator" ? "koordinátor" : "brigádník"}`,
+    metadata: {
+      from_status: "nahradnik",
+      from_poradi: prir.poradi_nahradnik,
+      to_role: newRole,
+      sazba: novaSazba,
+    },
+  })
+
+  revalidatePath(`/app/akce/${prir.akce_id}`)
+  if (akce.nabidka_id) revalidatePath(`/app/nabidky/${akce.nabidka_id}`)
   return { success: true }
 }
 

@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, MapPin, Calendar, Clock, Users, Key, UserCog, HardHat } from "lucide-react"
+import { ArrowLeft, MapPin, Calendar, Clock, Key, UserCog, HardHat } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,6 +15,8 @@ import { AddPrirazeniDialog } from "@/components/akce/add-prirazeni-dialog"
 import { AkceStavSelector } from "@/components/akce/akce-stav-selector"
 import { AkceDetailZrusitButton } from "@/components/akce/akce-detail-zrusit-button"
 import { EditAkceDialog } from "@/components/akce/edit-akce-dialog"
+import { PrirazeniRoleSelect } from "@/components/akce/prirazeni-role-select"
+import { PovysitNahradnikaDialog } from "@/components/akce/povysit-nahradnika-dialog"
 import { DokumentacniStavSelect } from "@/components/brigadnici/dokumentacni-stav-select"
 
 export const metadata: Metadata = { title: "Detail akce" }
@@ -32,8 +34,28 @@ export default async function AkceDetailPage({
     getAkcePrirazeni(id),
     getBrigadnici(),
   ])
-  const prirazeniCount = prirazeni.filter((p) => p.status === "prirazeny").length
-  const nahradniciCount = prirazeni.filter((p) => p.status === "nahradnik").length
+  // PR C — rozdělení do tří sekcí: Tým (prirazeny) / Náhradníci (nahradnik) / Vypadli (vypadl).
+  type PrirazeniRow = (typeof prirazeni)[number] & { role?: string | null; sazba_hodinova?: number | null }
+  const tym = (prirazeni as PrirazeniRow[]).filter((p) => p.status === "prirazeny")
+  const nahradnici = (prirazeni as PrirazeniRow[]).filter((p) => p.status === "nahradnik")
+  const vypadli = (prirazeni as PrirazeniRow[]).filter((p) => p.status === "vypadl")
+
+  // Řazení v týmu: koordinátoři první, pak brigádníci, alfabeticky uvnitř.
+  const sortByJmeno = (a: PrirazeniRow, b: PrirazeniRow) => {
+    const ba = a.brigadnik as { jmeno: string; prijmeni: string } | null
+    const bb = b.brigadnik as { jmeno: string; prijmeni: string } | null
+    return `${ba?.prijmeni ?? ""} ${ba?.jmeno ?? ""}`.localeCompare(`${bb?.prijmeni ?? ""} ${bb?.jmeno ?? ""}`, "cs")
+  }
+  const tymSorted = [...tym].sort((a, b) => {
+    const aKoord = a.role === "koordinator" ? 0 : 1
+    const bKoord = b.role === "koordinator" ? 0 : 1
+    if (aKoord !== bKoord) return aKoord - bKoord
+    return sortByJmeno(a, b)
+  })
+
+  const obsazenoBrig = tym.filter((p) => p.role === "brigadnik").length
+  const obsazenoKoord = tym.filter((p) => p.role === "koordinator").length
+
   const prirazeniIds = new Set(prirazeni.map(p => (p.brigadnik as unknown as { id: string })?.id))
   const availableBrigadnici = (allBrigadnici ?? [])
     .filter(b => !prirazeniIds.has(b.id))
@@ -44,6 +66,20 @@ export default async function AkceDetailPage({
   const dokStavMap = new Map<string, string>()
   // Vlastník (naborar) per brigadnik v kontextu této zakázky (akce.nabidka_id).
   const vlastnikMap = new Map<string, { jmeno: string; prijmeni: string }>()
+  // PR C — sazba_koordinator ze zakázky (NULL → koord role disabled v UI).
+  let sazbaKoordinator: number | null = null
+  {
+    const supabase = await createClient()
+    const nabidkaId = (akce as unknown as { nabidka_id?: string | null }).nabidka_id ?? null
+    if (nabidkaId) {
+      const { data: nab } = await supabase
+        .from("nabidky")
+        .select("sazba_koordinator")
+        .eq("id", nabidkaId)
+        .single()
+      sazbaKoordinator = (nab as { sazba_koordinator?: number | null } | null)?.sazba_koordinator ?? null
+    }
+  }
   if (brigadnikIds.length > 0) {
     const supabase = await createClient()
     const nabidkaId = (akce as unknown as { nabidka_id?: string | null }).nabidka_id ?? null
@@ -164,21 +200,26 @@ export default async function AkceDetailPage({
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Přiřazeno</span>
+              <UserCog className="h-4 w-4 text-blue-600" />
+              <span className="text-sm text-muted-foreground">Koordinátoři</span>
             </div>
             <p className="text-2xl font-bold mt-1">
-              {prirazeniCount}{akce.pocet_lidi ? `/${akce.pocet_lidi}` : ""}
+              {obsazenoKoord}/{(akce as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-500" />
-              <span className="text-sm text-muted-foreground">Náhradníci</span>
+              <HardHat className="h-4 w-4 text-amber-600" />
+              <span className="text-sm text-muted-foreground">Brigádníci</span>
             </div>
-            <p className="text-2xl font-bold mt-1">{nahradniciCount}</p>
+            <p className="text-2xl font-bold mt-1">
+              {obsazenoBrig}/{(akce as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {nahradnici.length > 0 ? `+${nahradnici.length} náhradník${nahradnici.length === 1 ? "" : nahradnici.length < 5 ? "ci" : "ů"}` : "žádní náhradníci"}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -203,13 +244,37 @@ export default async function AkceDetailPage({
         </div>
       )}
 
-      <Card>
+      {/* PR C — Sekce TÝM (status='prirazeny') */}
+      <Card className="mb-4">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Přiřazení brigádníci</CardTitle>
-          {!isZrusena && <AddPrirazeniDialog akceId={id} brigadnici={availableBrigadnici} />}
+          <CardTitle className="flex items-center gap-3">
+            <span>Tým</span>
+            <span className="text-sm font-normal text-muted-foreground flex items-center gap-2">
+              <span className="flex items-center gap-1">
+                <UserCog className="h-3.5 w-3.5 text-blue-600" />
+                {obsazenoKoord}/{(akce as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0}
+              </span>
+              <span>·</span>
+              <span className="flex items-center gap-1">
+                <HardHat className="h-3.5 w-3.5 text-amber-600" />
+                {obsazenoBrig}/{(akce as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0}
+              </span>
+            </span>
+          </CardTitle>
+          {!isZrusena && (
+            <AddPrirazeniDialog
+              akceId={id}
+              brigadnici={availableBrigadnici}
+              obsazenoBrig={obsazenoBrig}
+              obsazenoKoord={obsazenoKoord}
+              pocetBrigadniku={(akce as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0}
+              pocetKoordinatoru={(akce as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0}
+              sazbaKoordinator={sazbaKoordinator}
+            />
+          )}
         </CardHeader>
         <CardContent>
-          {prirazeni.length === 0 ? (
+          {tymSorted.length === 0 ? (
             <p className="text-sm text-muted-foreground">Zatím nikdo přiřazený.</p>
           ) : (
             <Table>
@@ -218,7 +283,7 @@ export default async function AkceDetailPage({
                   <TableHead>Brigádník</TableHead>
                   <TableHead>Vlastník</TableHead>
                   <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Sazba</TableHead>
                   <TableHead>Stav</TableHead>
                   <TableHead>Příchod</TableHead>
                   <TableHead>Odchod</TableHead>
@@ -227,11 +292,13 @@ export default async function AkceDetailPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {prirazeni.map((p) => {
+                {tymSorted.map((p) => {
                   const b = p.brigadnik as { id: string; jmeno: string; prijmeni: string; telefon: string } | null
                   const d = (p.dochazka as { prichod: string | null; odchod: string | null; hodin_celkem: number | null; hodnoceni: number | null }[])?.[0]
                   const dokStav = b ? dokStavMap.get(b.id) : undefined
                   const vlastnik = b ? vlastnikMap.get(b.id) : undefined
+                  const role = (p.role ?? null) as "brigadnik" | "koordinator" | null
+                  const sazba = p.sazba_hodinova
                   return (
                     <TableRow key={p.id}>
                       <TableCell>
@@ -254,15 +321,16 @@ export default async function AkceDetailPage({
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{(p as { role?: string | null }).role || "—"}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={
-                          p.status === "prirazeny" ? "bg-green-500/10 text-green-500 border-green-500/20" :
-                          p.status === "nahradnik" ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
-                          "bg-red-500/10 text-red-500 border-red-500/20"
-                        }>
-                          {p.status === "prirazeny" ? "Přiřazený" : p.status === "nahradnik" ? `Náhradník #${p.poradi_nahradnik ?? ""}` : "Vypadl"}
-                        </Badge>
+                        <PrirazeniRoleSelect
+                          prirazeniId={p.id}
+                          currentRole={role}
+                          disabled={isZrusena || isProbehla}
+                          koordPovolen={sazbaKoordinator != null}
+                        />
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {sazba != null ? `${sazba} Kč/h` : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell>
                         {b ? (
@@ -287,6 +355,99 @@ export default async function AkceDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {/* PR C — Sekce NÁHRADNÍCI (univerzální, role NULL) */}
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>Náhradníci — {nahradnici.length} {nahradnici.length === 1 ? "osoba" : nahradnici.length < 5 ? "osoby" : "osob"}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {nahradnici.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Žádní náhradníci.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Brigádník</TableHead>
+                  <TableHead>Pořadí</TableHead>
+                  <TableHead className="text-right">Akce</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {nahradnici
+                  .sort((a, b) => (a.poradi_nahradnik ?? 999) - (b.poradi_nahradnik ?? 999))
+                  .map((p) => {
+                    const b = p.brigadnik as { id: string; jmeno: string; prijmeni: string; telefon: string } | null
+                    const jmenoFull = b ? `${b.prijmeni} ${b.jmeno}` : "Brigádník"
+                    return (
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          {b ? (
+                            <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
+                              {b.prijmeni} {b.jmeno}
+                            </Link>
+                          ) : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20">
+                            #{p.poradi_nahradnik ?? "—"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {!isZrusena && !isProbehla && (
+                            <PovysitNahradnikaDialog
+                              prirazeniId={p.id}
+                              brigadnikJmeno={jmenoFull}
+                              koordPovolen={sazbaKoordinator != null}
+                            />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* PR C — Sekce VYPADLI (status='vypadl') */}
+      {vypadli.length > 0 && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Vypadli — {vypadli.length}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Brigádník</TableHead>
+                  <TableHead>Role</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {vypadli.map((p) => {
+                  const b = p.brigadnik as { id: string; jmeno: string; prijmeni: string; telefon: string } | null
+                  return (
+                    <TableRow key={p.id}>
+                      <TableCell>
+                        {b ? (
+                          <Link href={`/app/brigadnici/${b.id}`} className="font-medium hover:underline">
+                            {b.prijmeni} {b.jmeno}
+                          </Link>
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {p.role === "koordinator" ? "👔 Koordinátor" : p.role === "brigadnik" ? "👷 Brigádník" : "—"}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

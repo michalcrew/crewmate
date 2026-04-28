@@ -14,12 +14,26 @@ type Brigadnik = { id: string; jmeno: string; prijmeni: string; telefon: string 
 export function AddPrirazeniDialog({
   akceId,
   brigadnici,
+  // Volitelné props pro UX-guard nad kapacitou + dostupností koordinátora.
+  // Server validace je primární; tyto props slouží jen ke zlepšení UI.
+  obsazenoBrig = 0,
+  obsazenoKoord = 0,
+  pocetBrigadniku = 0,
+  pocetKoordinatoru = 0,
+  sazbaKoordinator = null,
 }: {
   akceId: string
   brigadnici: Brigadnik[]
+  obsazenoBrig?: number
+  obsazenoKoord?: number
+  pocetBrigadniku?: number
+  pocetKoordinatoru?: number
+  sazbaKoordinator?: number | null
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const [status, setStatus] = useState<"prirazeny" | "nahradnik">("prirazeny")
+  const [role, setRole] = useState<"brigadnik" | "koordinator">("brigadnik")
   const [isPending, startTransition] = useTransition()
 
   const filtered = brigadnici.filter((b) => {
@@ -27,13 +41,32 @@ export function AddPrirazeniDialog({
     return `${b.jmeno} ${b.prijmeni} ${b.telefon}`.toLowerCase().includes(q)
   })
 
+  const koordPovolen = sazbaKoordinator != null
+  const brigPlny = pocetBrigadniku > 0 && obsazenoBrig >= pocetBrigadniku
+  const koordPlny = pocetKoordinatoru > 0 && obsazenoKoord >= pocetKoordinatoru
+  const obsazeniHint =
+    status === "prirazeny"
+      ? role === "brigadnik"
+        ? brigPlny ? "Kapacita brigádníků je plná, přidejte jako náhradníka." : null
+        : koordPlny ? "Kapacita koordinátorů je plná, přidejte jako náhradníka." : null
+      : null
+
   function handleAdd(brigadnikId: string) {
     startTransition(async () => {
-      const result = await addPrirazeni(akceId, brigadnikId, "", "prirazeny")
-      if (result.error) {
+      const result = await addPrirazeni({
+        akceId,
+        brigadnikId,
+        status,
+        role: status === "prirazeny" ? role : undefined,
+      })
+      if ("error" in result && result.error) {
         toast.error(result.error)
       } else {
-        toast.success("Brigádník přiřazen")
+        toast.success(
+          status === "nahradnik"
+            ? "Brigádník přidán jako náhradník"
+            : `Brigádník přiřazen jako ${role === "koordinator" ? "koordinátor" : "brigádník"}`
+        )
         setOpen(false)
       }
     })
@@ -52,6 +85,86 @@ export function AddPrirazeniDialog({
           <DialogTitle>Přiřadit brigádníka na akci</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Status</Label>
+            <div className="flex gap-2">
+              <label className="flex-1">
+                <input
+                  type="radio"
+                  name="status"
+                  value="prirazeny"
+                  checked={status === "prirazeny"}
+                  onChange={() => setStatus("prirazeny")}
+                  className="peer sr-only"
+                />
+                <div className="peer-checked:bg-primary peer-checked:text-primary-foreground peer-checked:border-primary border rounded px-3 py-2 text-sm cursor-pointer text-center">
+                  Přiřazený
+                </div>
+              </label>
+              <label className="flex-1">
+                <input
+                  type="radio"
+                  name="status"
+                  value="nahradnik"
+                  checked={status === "nahradnik"}
+                  onChange={() => setStatus("nahradnik")}
+                  className="peer sr-only"
+                />
+                <div className="peer-checked:bg-primary peer-checked:text-primary-foreground peer-checked:border-primary border rounded px-3 py-2 text-sm cursor-pointer text-center">
+                  Náhradník
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {status === "prirazeny" && (
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <div className="flex gap-2">
+                <label className="flex-1">
+                  <input
+                    type="radio"
+                    name="role"
+                    value="brigadnik"
+                    checked={role === "brigadnik"}
+                    onChange={() => setRole("brigadnik")}
+                    className="peer sr-only"
+                  />
+                  <div className="peer-checked:bg-amber-500 peer-checked:text-white peer-checked:border-amber-500 border rounded px-3 py-2 text-sm cursor-pointer text-center">
+                    👷 Brigádník
+                  </div>
+                </label>
+                <label className={`flex-1 ${!koordPovolen ? "opacity-50" : ""}`}>
+                  <input
+                    type="radio"
+                    name="role"
+                    value="koordinator"
+                    checked={role === "koordinator"}
+                    onChange={() => setRole("koordinator")}
+                    disabled={!koordPovolen}
+                    className="peer sr-only"
+                  />
+                  <div
+                    className={`peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 border rounded px-3 py-2 text-sm text-center ${
+                      koordPovolen ? "cursor-pointer" : "cursor-not-allowed"
+                    }`}
+                    title={!koordPovolen ? "Tato zakázka nemá povoleného koordinátora" : undefined}
+                  >
+                    👔 Koordinátor
+                  </div>
+                </label>
+              </div>
+              {!koordPovolen && (
+                <p className="text-xs text-muted-foreground">
+                  Tato zakázka nemá povoleného koordinátora.
+                </p>
+              )}
+              {obsazeniHint && (
+                <p className="text-xs text-amber-600">{obsazeniHint}</p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>Hledat brigádníka</Label>
             <Input
