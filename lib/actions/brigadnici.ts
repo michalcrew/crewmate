@@ -449,11 +449,6 @@ export async function updateBrigadnikTyp(
   if (!current) return { error: "Brigádník nenalezen" }
   if (current.typ_brigadnika === typ) return { success: true }
 
-  // Při přepnutí na OSVČ kontrola DB constraint (ICO required)
-  if (typ === "osvc" && !current.osvc_ico) {
-    return { error: "Pro OSVČ je nutné nejdřív vyplnit IČO (přes updateBrigadnikOsvcFields)" }
-  }
-
   const { error } = await admin
     .from("brigadnici")
     .update({ typ_brigadnika: typ })
