@@ -51,14 +51,16 @@ export async function verifyPinHash(
 }
 
 /**
- * Hlavní verifikační helper pro transition period.
+ * Hlavní verifikační helper.
  *
- * Preferuje `pin_hash` (bcrypt); pokud je NULL, fallback na plaintext
- * `pin_kod` (legacy). Backfill script postupně převede všechny akce
- * na pin_hash — tehdy plaintext větev začne vždy returnovat false
- * (pro brand-new akce pin_kod nebude set).
+ * Vrací true, pokud zadaný PIN sedí na uložený hash NEBO plaintext —
+ * stačí jedna shoda. Důvod: plaintext (`pin_kod`) je v admin UI zobrazen
+ * koordinátorovi jako „PIN pro koordinátora". Pokud se hash a plaintext
+ * z jakéhokoliv důvodu rozejdou (manuální SQL update, race při generování),
+ * správný PIN by neměl být odmítán.
  *
- * @returns true pokud PIN sedí (hash nebo plaintext)
+ * Self-heal: když sedí jen plaintext a `pin_hash` je rozbitý, volající
+ * (`dochazka.ts`) potichu přepočítá hash. Viz `repairPinHashIfNeeded`.
  */
 export async function verifyPin(
   inputPin: string | null | undefined,
@@ -67,16 +69,43 @@ export async function verifyPin(
   if (!inputPin || typeof inputPin !== "string") return false
 
   if (stored.pin_hash) {
-    return verifyPinHash(inputPin, stored.pin_hash)
+    const hashOk = await verifyPinHash(inputPin, stored.pin_hash)
+    if (hashOk) return true
   }
 
-  // Legacy fallback — plaintext compare. Stále timing-unsafe, ale toto
-  // je přechodná cesta dokud nebude backfill hotový.
-  if (stored.pin_kod) {
-    return inputPin === stored.pin_kod
+  if (stored.pin_kod && inputPin === stored.pin_kod) {
+    return true
   }
 
   return false
+}
+
+/**
+ * Self-heal: pokud plaintext sedí, ale hash neexistuje nebo neodpovídá,
+ * přepočítá hash z plaintextu. Best-effort — chyby se nelogují, abychom
+ * neblokovali úspěšné PIN ověření.
+ *
+ * Volá se po úspěšném verifyPin(). Pokud byla shoda jen na plaintextu
+ * (nebo hash byl NULL), hash se zaktualizuje. Příště už verifyPin
+ * dosáhne shody přímo na hash.
+ */
+export async function maybeRepairPinHash(args: {
+  pin: string
+  storedHash: string | null
+  /** Volání se provede jen pokud hash chybí nebo neodpovídá. */
+  updateHash: (newHash: string) => Promise<unknown>
+}): Promise<void> {
+  const { pin, storedHash, updateHash } = args
+  if (storedHash) {
+    const currentMatches = await verifyPinHash(pin, storedHash)
+    if (currentMatches) return // hash je v pořádku
+  }
+  try {
+    const fresh = await hashPin(pin)
+    await updateHash(fresh)
+  } catch {
+    // best-effort
+  }
 }
 
 /**
