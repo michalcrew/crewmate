@@ -211,7 +211,7 @@ export async function getBrigadnikAkce(brigadnikId: string) {
     .from("prirazeni")
     .select(
       `
-      id, akce_id, status, pozice, poradi_nahradnik,
+      id, akce_id, status, role, poradi_nahradnik,
       akce:akce(id, nazev, datum, cas_od, cas_do, misto, stav, nabidka_id,
                 nabidka:nabidky(id, nazev))
     `

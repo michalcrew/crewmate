@@ -79,7 +79,7 @@ export async function getDochazkaByAkce(akceId: string, pin: string) {
     .select(`
       id,
       brigadnik:brigadnici(id, jmeno, prijmeni),
-      pozice,
+      role,
       status,
       dochazka(id, prichod, odchod, hodin_celkem, hodnoceni, poznamka)
     `)
@@ -107,23 +107,18 @@ async function autoLogInternalExperience(
 
   if (existing && existing.length > 0) return
 
-  // Get akce details + prirazeni position
+  // Get akce details. Po team-roles migraci se název pozice odvozuje pouze
+  // z názvu akce (pracovni_zkusenosti.pozice je samostatný sloupec v jiné
+  // tabulce — sloupec prirazeni.pozice byl DROP).
   const { data: akce } = await supabase
     .from("akce")
     .select("nazev, datum, misto, klient")
     .eq("id", akceId)
     .single()
 
-  const { data: prirazeni } = await supabase
-    .from("prirazeni")
-    .select("pozice")
-    .eq("akce_id", akceId)
-    .eq("brigadnik_id", brigadnikId)
-    .single()
-
   if (!akce) return
 
-  const pozice = prirazeni?.pozice || akce.nazev
+  const pozice = akce.nazev
   const popis = [akce.klient, akce.misto].filter(Boolean).join(", ")
 
   await supabase.from("pracovni_zkusenosti").insert({
@@ -592,7 +587,7 @@ export async function getAkceDochazkaForAdmin(akceId: string) {
   const { data: entries } = await admin
     .from("prirazeni")
     .select(`
-      id, akce_id, brigadnik_id, pozice, status, poradi_nahradnik,
+      id, akce_id, brigadnik_id, role, status, poradi_nahradnik,
       brigadnik:brigadnici(id, jmeno, prijmeni, typ_brigadnika),
       dochazka(id, prichod, odchod, hodin_celkem, hodnoceni, poznamka)
     `)
@@ -661,7 +656,7 @@ export async function getKoordinatorDochazka(akceId: string, pin: string) {
   // relation by mohla vrátit prázdné pole pro reálně existující data).
   const { data: prirazeni } = await supabase
     .from("prirazeni")
-    .select("id, akce_id, brigadnik_id, pozice, status, poradi_nahradnik")
+    .select("id, akce_id, brigadnik_id, role, status, poradi_nahradnik")
     .eq("akce_id", akceId)
     .order("created_at", { ascending: true })
 
@@ -730,7 +725,7 @@ export async function getKoordinatorDochazka(akceId: string, pin: string) {
       id: p.id as string,
       akce_id: p.akce_id as string,
       brigadnik_id: brigadnikId,
-      pozice: p.pozice as string | null,
+      role: p.role as string | null,
       status: p.status as string,
       poradi_nahradnik: p.poradi_nahradnik as number | null,
       brigadnik: brigadnikById.get(brigadnikId) ?? null,

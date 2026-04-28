@@ -16,9 +16,15 @@ const akceSchema = z.object({
   cas_do: z.string().optional(),
   klient: z.string().optional(),
   nabidka_id: z.string().optional(),
-  pocet_lidi: z.preprocess(
+  // Team roles & rates: pocet_lidi je v DB GENERATED (součet níže), do INSERT
+  // se neposílá. UI ho zatím může poslat — ignorujeme.
+  pocet_brigadniku: z.preprocess(
     (v) => (v === "" || v == null ? undefined : v),
-    z.coerce.number().int().positive().optional(),
+    z.coerce.number().int().nonnegative().optional(),
+  ),
+  pocet_koordinatoru: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().nonnegative().optional(),
   ),
   poznamky: z.string().optional(),
 })
@@ -30,9 +36,13 @@ const stavFilterEnum = z.enum(["planovana", "probehla", "zrusena", "all"])
 // F-0015 — Allowlist pro updateAkce na probehla (D-05)
 const probehlaAllowlist = z.object({
   poznamky: z.string().optional(),
-  pocet_lidi: z.preprocess(
+  pocet_brigadniku: z.preprocess(
     (v) => (v === "" || v == null ? undefined : v),
-    z.coerce.number().int().positive().optional(),
+    z.coerce.number().int().nonnegative().optional(),
+  ),
+  pocet_koordinatoru: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().nonnegative().optional(),
   ),
 })
 
@@ -44,9 +54,13 @@ const updateAkceFullSchema = z.object({
   cas_od: z.string().optional(),
   cas_do: z.string().optional(),
   klient: z.string().optional(),
-  pocet_lidi: z.preprocess(
+  pocet_brigadniku: z.preprocess(
     (v) => (v === "" || v == null ? undefined : v),
-    z.coerce.number().int().positive().optional(),
+    z.coerce.number().int().nonnegative().optional(),
+  ),
+  pocet_koordinatoru: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().nonnegative().optional(),
   ),
   poznamky: z.string().optional(),
 })
@@ -186,7 +200,7 @@ export async function getAkceByNabidka(nabidkaId: string) {
   const supabase = await createClient()
   const { data } = await supabase
     .from("akce")
-    .select("*, prirazeni(id, brigadnik_id, pozice, status, brigadnik:brigadnici(id, jmeno, prijmeni))")
+    .select("*, prirazeni(id, brigadnik_id, role, status, brigadnik:brigadnici(id, jmeno, prijmeni))")
     .eq("nabidka_id", nabidkaId)
     .order("datum", { ascending: true })
   return data ?? []
@@ -282,17 +296,30 @@ export async function getAkcePrirazeni(akceId: string) {
   return data ?? []
 }
 
-export async function addPrirazeni(akceId: string, brigadnikId: string, pozice: string, status: string = "prirazeny") {
+export async function addPrirazeni(
+  akceId: string,
+  brigadnikId: string,
+  // pozice param je legacy — sloupec byl DROP v migraci
+  // 20260430000001_team_roles_and_rates. Hodnota se ignoruje, role se nastaví
+  // až v PR B (UI pro výběr brigadnik/koordinator). Default 'brigadnik' splňuje
+  // CHECK constraint prirazeni_role_required pro non-nahradnik statusy.
+  _pozice: string,
+  status: string = "prirazeny"
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  const { error } = await supabase.from("prirazeni").insert({
+  const insertRow: Record<string, unknown> = {
     akce_id: akceId,
     brigadnik_id: brigadnikId,
-    pozice: pozice || null,
     status,
-  })
+  }
+  if (status !== "nahradnik") {
+    insertRow.role = "brigadnik"
+  }
+
+  const { error } = await supabase.from("prirazeni").insert(insertRow)
 
   if (error) {
     if (error.code === "23505") return { error: "Brigádník je již přiřazený na tuto akci" }
@@ -339,7 +366,10 @@ export async function addPrirazeni(akceId: string, brigadnikId: string, pozice: 
 export async function assignBrigadnikToAkce(
   akceId: string,
   brigadnikId: string,
-  pozice?: string
+  // pozice param je legacy — sloupec byl DROP v migraci
+  // 20260430000001_team_roles_and_rates. Hodnota se ignoruje, role se nastaví
+  // až v PR B (UI pro výběr brigadnik/koordinator).
+  _pozice?: string
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -374,11 +404,12 @@ export async function assignBrigadnikToAkce(
     return { error: "Brigádník musí být ve stavu 'Přijatý' než bude přiřazen na akci" }
   }
 
-  // Insert přiřazení (silent no-op on duplicate)
+  // Insert přiřazení (silent no-op on duplicate). Default role 'brigadnik' —
+  // PR B přidá UI pro výběr role koordinator.
   const { error } = await supabase.from("prirazeni").insert({
     akce_id: akceId,
     brigadnik_id: brigadnikId,
-    pozice: pozice || null,
+    role: "brigadnik",
     status: "prirazeny",
   })
 
@@ -456,7 +487,7 @@ export async function odeslatBriefing(akceId: string, briefingText?: string) {
 
   const { data: akce } = await supabase
     .from("akce")
-    .select("id, nazev, datum, misto, nabidka_id, prirazeni(brigadnik:brigadnici(id, email, jmeno, prijmeni), pozice, status)")
+    .select("id, nazev, datum, misto, nabidka_id, prirazeni(brigadnik:brigadnici(id, email, jmeno, prijmeni), role, status)")
     .eq("id", akceId)
     .single()
 
@@ -464,7 +495,7 @@ export async function odeslatBriefing(akceId: string, briefingText?: string) {
 
   const prirazeni = (akce.prirazeni ?? []) as unknown as Array<{
     brigadnik: { id: string; email: string; jmeno: string; prijmeni: string } | null
-    pozice: string | null
+    role: string | null
     status: string
   }>
 
@@ -499,7 +530,9 @@ export async function odeslatBriefing(akceId: string, briefingText?: string) {
         akce_nazev: akce.nazev,
         akce_datum: new Date(akce.datum).toLocaleDateString("cs-CZ"),
         akce_misto: akce.misto ?? "",
-        pozice: r.pozice ?? "",
+        // pozice template var: po team-roles migraci mapováno na role
+        // ('brigadnik'/'koordinator'/''). Šablona může být upravena v PR B.
+        pozice: r.role ?? "",
         briefing_text: briefingText ?? "",
       }
       const subject = sablona.predmet.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => vars[k] ?? "")
@@ -693,24 +726,38 @@ export async function updateAkce(
 
   const raw = Object.fromEntries(formData.entries())
 
-  // D-05: proběhlé → jen allowlist poznamky + pocet_lidi
+  // D-05: proběhlé → jen allowlist poznamky + pocet_brigadniku/koordinatoru.
+  // pocet_lidi je v DB GENERATED, do UPDATE nepatří. Pokud forms posílají
+  // legacy pocet_lidi, ignorujeme — UI to přepíše PR B.
   let updatePayload: Record<string, unknown>
   if (current.stav === "probehla") {
     const parsed = probehlaAllowlist.safeParse({
       poznamky: raw.poznamky ?? undefined,
-      pocet_lidi: raw.pocet_lidi || undefined,
+      pocet_brigadniku: raw.pocet_brigadniku || undefined,
+      pocet_koordinatoru: raw.pocet_koordinatoru || undefined,
     })
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
     }
     updatePayload = {
       poznamky: parsed.data.poznamky ?? null,
-      pocet_lidi: parsed.data.pocet_lidi ?? null,
       updated_at: new Date().toISOString(),
     }
+    if (parsed.data.pocet_brigadniku !== undefined) {
+      updatePayload.pocet_brigadniku = parsed.data.pocet_brigadniku
+    }
+    if (parsed.data.pocet_koordinatoru !== undefined) {
+      updatePayload.pocet_koordinatoru = parsed.data.pocet_koordinatoru
+    }
   } else {
-    // planovana: plný update
-    const normalized = { ...raw, pocet_lidi: raw.pocet_lidi || undefined }
+    // planovana: plný update. Vyhoď legacy pocet_lidi (GENERATED v DB).
+    const { pocet_lidi: _legacyPocetLidi, ...restRaw } = raw as Record<string, unknown>
+    void _legacyPocetLidi
+    const normalized = {
+      ...restRaw,
+      pocet_brigadniku: restRaw.pocet_brigadniku || undefined,
+      pocet_koordinatoru: restRaw.pocet_koordinatoru || undefined,
+    }
     const parsed = updateAkceFullSchema.safeParse(normalized)
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
@@ -721,7 +768,6 @@ export async function updateAkce(
       cas_do: parsed.data.cas_do || null,
       klient: parsed.data.klient || null,
       misto: parsed.data.misto || null,
-      pocet_lidi: parsed.data.pocet_lidi ?? null,
       poznamky: parsed.data.poznamky ?? null,
       updated_at: new Date().toISOString(),
     }

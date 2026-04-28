@@ -19,9 +19,25 @@ const nabidkaCoreSchema = z.object({
   misto: z.string().optional(),
   datum_od: z.string().optional(),
   datum_do: z.string().optional(),
-  pocet_lidi: z.preprocess(
+  // Team roles & rates: pocet_lidi je v DB GENERATED (součet níže), do
+  // INSERT/UPDATE se neposílá. UI form pole se přepíše v PR B.
+  pocet_brigadniku: z.preprocess(
     (v) => (v === "" || v == null ? undefined : v),
-    z.coerce.number().int().positive().optional(),
+    z.coerce.number().int().nonnegative().optional(),
+  ),
+  pocet_koordinatoru: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().nonnegative().optional(),
+  ),
+  // Sazby per role na zakázce (snapshot do prirazeni.sazba_hodinova v PR B).
+  // NULL u sazba_koordinator znamená "zakázka nemá povoleného koordinátora".
+  sazba_brigadnik: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().nonnegative().optional(),
+  ),
+  sazba_koordinator: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().nonnegative().optional(),
   ),
   slug: z.string().optional(),
   publikovano: z.boolean().optional(),
@@ -35,9 +51,16 @@ const createJednodenniSchema = nabidkaCoreSchema.extend({
   akce_misto: z.string().optional(),
   akce_cas_od: z.string().optional(),
   akce_cas_do: z.string().optional(),
-  akce_pocet_lidi: z.preprocess(
+  // Stejně jako pocet_lidi na nabidky — akce.pocet_lidi je GENERATED.
+  // Akce-level rozdělení se zatím přes form neposílá (PR B doplní), ale
+  // schema necháváme připravené pro forward-compat.
+  akce_pocet_brigadniku: z.preprocess(
     (v) => (v === "" || v == null ? undefined : v),
-    z.coerce.number().int().positive().optional(),
+    z.coerce.number().int().nonnegative().optional(),
+  ),
+  akce_pocet_koordinatoru: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().nonnegative().optional(),
   ),
 })
 
@@ -199,11 +222,22 @@ export async function createNabidka(formData: FormData) {
   if (!user) return { error: "Nepřihlášen" }
 
   const raw = Object.fromEntries(formData.entries())
+  // pocet_lidi (top-level i akce_pocet_lidi) je GENERATED v DB — vyhoď legacy
+  // form pole, schema je nezná. Forward-compat přijímáme pocet_brigadniku /
+  // pocet_koordinatoru (doplní PR B).
+  const { pocet_lidi: _legacyPL, akce_pocet_lidi: _legacyAPL, ...rest } =
+    raw as Record<string, unknown>
+  void _legacyPL
+  void _legacyAPL
   const normalized = {
-    ...raw,
-    publikovano: raw.publikovano === "on" || raw.publikovano === "true",
-    pocet_lidi: raw.pocet_lidi || undefined,
-    akce_pocet_lidi: raw.akce_pocet_lidi || undefined,
+    ...rest,
+    publikovano: rest.publikovano === "on" || rest.publikovano === "true",
+    pocet_brigadniku: rest.pocet_brigadniku || undefined,
+    pocet_koordinatoru: rest.pocet_koordinatoru || undefined,
+    akce_pocet_brigadniku: rest.akce_pocet_brigadniku || undefined,
+    akce_pocet_koordinatoru: rest.akce_pocet_koordinatoru || undefined,
+    sazba_brigadnik: rest.sazba_brigadnik || undefined,
+    sazba_koordinator: rest.sazba_koordinator || undefined,
   }
 
   const parsed = createNabidkaSchema.safeParse(normalized)
@@ -220,8 +254,8 @@ export async function createNabidka(formData: FormData) {
     .eq("auth_user_id", user.id)
     .single()
 
-  // Insert nabidka
-  const nabidkaInsert = {
+  // Insert nabidka. pocet_lidi NESMÍ být v payloadu (GENERATED v DB).
+  const nabidkaInsert: Record<string, unknown> = {
     nazev: data.nazev,
     typ: data.typ,
     klient: data.klient || null,
@@ -232,7 +266,10 @@ export async function createNabidka(formData: FormData) {
     misto: data.misto || null,
     datum_od: data.datum_od || null,
     datum_do: data.datum_do || null,
-    pocet_lidi: data.pocet_lidi ?? null,
+    pocet_brigadniku: data.pocet_brigadniku ?? 0,
+    pocet_koordinatoru: data.pocet_koordinatoru ?? 0,
+    sazba_brigadnik: data.sazba_brigadnik ?? null,
+    sazba_koordinator: data.sazba_koordinator ?? null,
     slug,
     publikovano: data.publikovano ?? true,
     koho_hledame: data.koho_hledame || null,
@@ -251,7 +288,9 @@ export async function createNabidka(formData: FormData) {
     return { error: error?.message ?? "Nepodařilo se vytvořit zakázku" }
   }
 
-  // For jednodenni: also create the akce
+  // For jednodenni: also create the akce. pocet_lidi NESMÍ být v payloadu
+  // (GENERATED v DB) — místo toho zapisujeme pocet_brigadniku/koordinatoru.
+  // Fallback z nabídky: když akce nemá vlastní rozdělení, zděď ho.
   if (data.typ === "jednodenni") {
     const pinPair = await generatePinPair()
     const { error: akceError } = await supabase.from("akce").insert({
@@ -262,7 +301,10 @@ export async function createNabidka(formData: FormData) {
       misto: data.akce_misto || data.misto || null,
       klient: data.klient || null,
       nabidka_id: inserted.id,
-      pocet_lidi: data.akce_pocet_lidi ?? data.pocet_lidi ?? null,
+      pocet_brigadniku:
+        data.akce_pocet_brigadniku ?? data.pocet_brigadniku ?? 0,
+      pocet_koordinatoru:
+        data.akce_pocet_koordinatoru ?? data.pocet_koordinatoru ?? 0,
       pin_kod: pinPair.plaintext,
       pin_hash: pinPair.hash,
     })
@@ -296,18 +338,28 @@ export async function updateNabidka(id: string, formData: FormData) {
 
   const raw = Object.fromEntries(formData.entries())
 
-  // Split akce fields (handled separately for jednodenni), strip typ (immutable)
+  // Split akce fields (handled separately for jednodenni), strip typ (immutable),
+  // strip legacy pocet_lidi (GENERATED v DB, nelze zapsat).
   const {
     typ: _discardedTyp,
-    akce_datum, akce_misto, akce_cas_od, akce_cas_do, akce_pocet_lidi,
+    akce_datum, akce_misto, akce_cas_od, akce_cas_do,
+    akce_pocet_lidi: _legacyAPL,
+    pocet_lidi: _legacyPL,
+    akce_pocet_brigadniku,
+    akce_pocet_koordinatoru,
     ...rest
-  } = raw
+  } = raw as Record<string, unknown>
   void _discardedTyp
+  void _legacyAPL
+  void _legacyPL
 
   const normalized = {
     ...rest,
     publikovano: rest.publikovano === "on" || rest.publikovano === "true",
-    pocet_lidi: rest.pocet_lidi || undefined,
+    pocet_brigadniku: rest.pocet_brigadniku || undefined,
+    pocet_koordinatoru: rest.pocet_koordinatoru || undefined,
+    sazba_brigadnik: rest.sazba_brigadnik || undefined,
+    sazba_koordinator: rest.sazba_koordinator || undefined,
   }
 
   const parsed = updateNabidkaSchema.safeParse(normalized)
@@ -320,22 +372,36 @@ export async function updateNabidka(id: string, formData: FormData) {
   if (!current) return { error: "Zakázka nenalezena" }
   if (current.typ === "ukoncena") return { error: "Ukončenou zakázku nelze upravovat" }
 
+  // pocet_lidi do payloadu nepatří (GENERATED v DB).
+  const updatePayload: Record<string, unknown> = {
+    ...parsed.data,
+    datum_od: parsed.data.datum_od || null,
+    datum_do: parsed.data.datum_do || null,
+    klient: parsed.data.klient || null,
+    typ_pozice: parsed.data.typ_pozice || null,
+    popis_prace: parsed.data.popis_prace || null,
+    pozadavky: parsed.data.pozadavky || null,
+    odmena: parsed.data.odmena || null,
+    misto: parsed.data.misto || null,
+    koho_hledame: parsed.data.koho_hledame || null,
+    co_nabizime: parsed.data.co_nabizime || null,
+  }
+  if (parsed.data.pocet_brigadniku !== undefined) {
+    updatePayload.pocet_brigadniku = parsed.data.pocet_brigadniku
+  }
+  if (parsed.data.pocet_koordinatoru !== undefined) {
+    updatePayload.pocet_koordinatoru = parsed.data.pocet_koordinatoru
+  }
+  if (parsed.data.sazba_brigadnik !== undefined) {
+    updatePayload.sazba_brigadnik = parsed.data.sazba_brigadnik
+  }
+  if (parsed.data.sazba_koordinator !== undefined) {
+    updatePayload.sazba_koordinator = parsed.data.sazba_koordinator
+  }
+
   const { error } = await supabase
     .from("nabidky")
-    .update({
-      ...parsed.data,
-      datum_od: parsed.data.datum_od || null,
-      datum_do: parsed.data.datum_do || null,
-      klient: parsed.data.klient || null,
-      typ_pozice: parsed.data.typ_pozice || null,
-      popis_prace: parsed.data.popis_prace || null,
-      pozadavky: parsed.data.pozadavky || null,
-      odmena: parsed.data.odmena || null,
-      misto: parsed.data.misto || null,
-      koho_hledame: parsed.data.koho_hledame || null,
-      co_nabizime: parsed.data.co_nabizime || null,
-      pocet_lidi: parsed.data.pocet_lidi ?? null,
-    })
+    .update(updatePayload)
     .eq("id", id)
 
   if (error) return { error: error.message }
@@ -345,14 +411,21 @@ export async function updateNabidka(id: string, formData: FormData) {
   if (current.typ === "jednodenni") {
     const datumStr = String(akce_datum ?? "").trim()
     if (datumStr) {
-      const akcePayload = {
+      // pocet_lidi je GENERATED — místo toho zapisujeme rozdělení per role.
+      // Když UI nepošle akce-level rozdělení, zděď ho ze zakázky (nebo 0).
+      const akcePayload: Record<string, unknown> = {
         nazev: parsed.data.nazev ?? current.nazev,
         datum: datumStr,
         misto: String(akce_misto ?? parsed.data.misto ?? current.misto ?? "").trim() || null,
-        cas_od: normalizeTime(akce_cas_od),
-        cas_do: normalizeTime(akce_cas_do),
+        cas_od: normalizeTime(akce_cas_od as string | null | undefined),
+        cas_do: normalizeTime(akce_cas_do as string | null | undefined),
         klient: parsed.data.klient ?? current.klient ?? null,
-        pocet_lidi: akce_pocet_lidi ? Number(akce_pocet_lidi) : parsed.data.pocet_lidi ?? null,
+        pocet_brigadniku: akce_pocet_brigadniku
+          ? Number(akce_pocet_brigadniku)
+          : parsed.data.pocet_brigadniku ?? 0,
+        pocet_koordinatoru: akce_pocet_koordinatoru
+          ? Number(akce_pocet_koordinatoru)
+          : parsed.data.pocet_koordinatoru ?? 0,
       }
 
       // Existing akce for this nabidka?
