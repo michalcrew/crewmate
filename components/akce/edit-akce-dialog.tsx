@@ -76,7 +76,7 @@ export function EditAkceDialog({
         <DialogHeader>
           <DialogTitle>Upravit akci</DialogTitle>
         </DialogHeader>
-        <form action={formAction} className="space-y-4">
+        <form action={formAction} className="space-y-4" noValidate>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="ea-cas-od">Čas od</Label>

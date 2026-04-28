@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getVocativeName } from "@/lib/utils/vocative"
+import { normalizeTime } from "@/lib/utils/time"
 import { z } from "zod"
 
 // F-0015 HF — RLS lookup helper (pattern z F-0013 HF4c updateUserPodpis).
@@ -241,8 +242,8 @@ export async function createAkce(formData: FormData) {
   const pinPair = await generatePinPair()
   const { data: inserted, error } = await supabase.from("akce").insert({
     ...parsed.data,
-    cas_od: parsed.data.cas_od || null,
-    cas_do: parsed.data.cas_do || null,
+    cas_od: normalizeTime(parsed.data.cas_od),
+    cas_do: normalizeTime(parsed.data.cas_do),
     nabidka_id: parsed.data.nabidka_id || null,
     pin_kod: pinPair.plaintext,
     pin_hash: pinPair.hash,
