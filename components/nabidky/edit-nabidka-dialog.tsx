@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Pencil } from "lucide-react"
+import { Pencil, UserCog, HardHat } from "lucide-react"
 import { updateNabidka } from "@/lib/actions/nabidky"
 import { TYP_POZICE_OPTIONS, NABIDKA_TYPY, type NabidkaTyp } from "@/lib/constants"
 import { toast } from "sonner"
@@ -18,7 +18,8 @@ type AkceData = {
   misto: string | null
   cas_od: string | null
   cas_do: string | null
-  pocet_lidi: number | null
+  pocet_brigadniku?: number | null
+  pocet_koordinatoru?: number | null
 }
 
 type Props = {
@@ -34,7 +35,10 @@ type Props = {
     misto: string | null
     datum_od: string | null
     datum_do: string | null
-    pocet_lidi: number | null
+    pocet_brigadniku?: number | null
+    pocet_koordinatoru?: number | null
+    sazba_brigadnik?: number | null
+    sazba_koordinator?: number | null
     publikovano: boolean
     koho_hledame?: string | null
     co_nabizime?: string | null
@@ -49,15 +53,26 @@ export function EditNabidkaDialog({ nabidka, akce }: Props) {
   const isUkoncena = nabidka.typ === "ukoncena"
   const isJednodenni = nabidka.typ === "jednodenni"
 
+  // UI-only checkbox — toggluje viditelnost koord polí. Hodnoty se neresetují
+  // v DB při form submit (server pošle null pro sazbu, 0 pro počet).
+  const initialMaKoord =
+    (nabidka.sazba_koordinator ?? null) !== null ||
+    (nabidka.pocet_koordinatoru ?? 0) > 0
+  const [maKoordinatora, setMaKoordinatora] = useState(initialMaKoord)
+
   const [state, formAction, pending] = useActionState(
     async (_prev: { error?: string } | null, formData: FormData) => {
       const result = await updateNabidka(nabidka.id, formData)
-      if (result.success) {
-        toast.success(isJednodenni ? "Zakázka i akce uloženy" : "Zakázka upravena")
-        setOpen(false)
-        return null
+      if ("error" in result && result.error) {
+        return { error: result.error }
       }
-      return result
+      if ((result as { warning?: string }).warning) {
+        toast.warning((result as { warning: string }).warning)
+      } else {
+        toast.success(isJednodenni ? "Zakázka i akce uloženy" : "Zakázka upravena")
+      }
+      setOpen(false)
+      return null
     },
     null
   )
@@ -117,16 +132,93 @@ export function EditNabidkaDialog({ nabidka, akce }: Props) {
               <Input name="misto" defaultValue={nabidka.misto ?? ""} />
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Odměna</Label>
-              <Input name="odmena" defaultValue={nabidka.odmena ?? ""} />
-            </div>
-            <div className="space-y-2">
-              <Label>Počet lidí</Label>
-              <Input name="pocet_lidi" type="number" min="1" defaultValue={nabidka.pocet_lidi ?? ""} />
-            </div>
+          <div className="space-y-2">
+            <Label>Odměna (volný text)</Label>
+            <Input name="odmena" defaultValue={nabidka.odmena ?? ""} placeholder="např. 180 Kč/h, hotově po akci" />
           </div>
+
+          {/* Tým a sazby */}
+          <Card className="bg-muted/30">
+            <CardHeader>
+              <CardTitle className="text-base">Tým a sazby</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-0">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="en-ma-koord"
+                  name="ma_koordinatora"
+                  className="h-4 w-4"
+                  checked={maKoordinatora}
+                  onChange={(e) => setMaKoordinatora(e.target.checked)}
+                />
+                <Label htmlFor="en-ma-koord" className="font-normal flex items-center gap-1">
+                  <UserCog className="h-3.5 w-3.5" /> Mít koordinátora
+                </Label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="en-pocet-brig" className="flex items-center gap-1">
+                    <HardHat className="h-3.5 w-3.5" /> Počet brigádníků
+                  </Label>
+                  <Input
+                    id="en-pocet-brig"
+                    name="pocet_brigadniku"
+                    type="number"
+                    min="0"
+                    defaultValue={nabidka.pocet_brigadniku ?? 0}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="en-sazba-brig">Sazba brigádníka (Kč/h)</Label>
+                  <Input
+                    id="en-sazba-brig"
+                    name="sazba_brigadnik"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={nabidka.sazba_brigadnik ?? ""}
+                    placeholder="např. 180"
+                  />
+                </div>
+              </div>
+
+              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${maKoordinatora ? "" : "opacity-40 pointer-events-none"}`}>
+                <div className="space-y-2">
+                  <Label htmlFor="en-pocet-koord" className="flex items-center gap-1">
+                    <UserCog className="h-3.5 w-3.5" /> Počet koordinátorů
+                  </Label>
+                  <Input
+                    id="en-pocet-koord"
+                    name="pocet_koordinatoru"
+                    type="number"
+                    min="0"
+                    defaultValue={nabidka.pocet_koordinatoru ?? 0}
+                    disabled={!maKoordinatora}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="en-sazba-koord">Sazba koordinátora (Kč/h)</Label>
+                  <Input
+                    id="en-sazba-koord"
+                    name="sazba_koordinator"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={nabidka.sazba_koordinator ?? ""}
+                    placeholder="např. 250"
+                    disabled={!maKoordinatora}
+                  />
+                </div>
+              </div>
+              {!maKoordinatora && (
+                <p className="text-xs text-muted-foreground">
+                  Bez koordinátora — sazba se uloží jako prázdná, do DB jde NULL.
+                </p>
+              )}
+            </CardContent>
+          </Card>
           {!isJednodenni && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -191,7 +283,7 @@ export function EditNabidkaDialog({ nabidka, akce }: Props) {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="en-akce-cas-od">Čas od</Label>
                     <Input id="en-akce-cas-od" name="akce_cas_od" type="time" defaultValue={casOdInit} />
@@ -200,14 +292,31 @@ export function EditNabidkaDialog({ nabidka, akce }: Props) {
                     <Label htmlFor="en-akce-cas-do">Čas do</Label>
                     <Input id="en-akce-cas-do" name="akce_cas_do" type="time" defaultValue={casDoInit} />
                   </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="en-akce-pocet">Kapacita akce</Label>
+                    <Label htmlFor="en-akce-pocet-brig" className="flex items-center gap-1">
+                      <HardHat className="h-3.5 w-3.5" /> Počet brigádníků na akci
+                    </Label>
                     <Input
-                      id="en-akce-pocet"
-                      name="akce_pocet_lidi"
+                      id="en-akce-pocet-brig"
+                      name="akce_pocet_brigadniku"
                       type="number"
-                      min="1"
-                      defaultValue={akce?.pocet_lidi ?? ""}
+                      min="0"
+                      defaultValue={akce?.pocet_brigadniku ?? nabidka.pocet_brigadniku ?? 0}
+                    />
+                  </div>
+                  <div className={`space-y-2 ${maKoordinatora ? "" : "opacity-40 pointer-events-none"}`}>
+                    <Label htmlFor="en-akce-pocet-koord" className="flex items-center gap-1">
+                      <UserCog className="h-3.5 w-3.5" /> Počet koordinátorů na akci
+                    </Label>
+                    <Input
+                      id="en-akce-pocet-koord"
+                      name="akce_pocet_koordinatoru"
+                      type="number"
+                      min="0"
+                      defaultValue={akce?.pocet_koordinatoru ?? nabidka.pocet_koordinatoru ?? 0}
+                      disabled={!maKoordinatora}
                     />
                   </div>
                 </div>

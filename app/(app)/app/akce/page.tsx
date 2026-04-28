@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Plus, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Calendar as CalendarIcon, ChevronLeft, ChevronRight, UserCog, HardHat } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -112,6 +112,7 @@ export default async function AkcePage({
                     <TableHead>Datum</TableHead>
                     <TableHead>Místo</TableHead>
                     <TableHead>Nabídka</TableHead>
+                    <TableHead>Tým</TableHead>
                     <TableHead>Kapacita</TableHead>
                     <TableHead>Stav</TableHead>
                     <TableHead className="w-12"></TableHead>
@@ -140,6 +141,19 @@ export default async function AkcePage({
                         <TableCell className="text-muted-foreground text-sm">{a.misto || "—"}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {(a.nabidka as { nazev: string } | null)?.nazev || "—"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-xs tabular-nums" title="Koordinátoři / Brigádníci">
+                            <span className="flex items-center gap-1">
+                              <UserCog className="h-3 w-3 text-blue-600" />
+                              {(a as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0}
+                            </span>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="flex items-center gap-1">
+                              <HardHat className="h-3 w-3 text-amber-600" />
+                              {(a as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0}
+                            </span>
+                          </div>
                         </TableCell>
                         <TableCell>
                           {target > 0 ? (

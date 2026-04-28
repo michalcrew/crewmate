@@ -211,8 +211,12 @@ export async function createAkce(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  const raw = Object.fromEntries(formData.entries())
-  const parsed = akceSchema.safeParse(raw)
+  // Strip legacy pocet_lidi (GENERATED v DB) — UI nemá posílat, ale starší
+  // verze mohly ještě mít pole. Bez stripu by `.strict()` schema spadla.
+  const { pocet_lidi: _legacyPocetLidi, ...rawClean } =
+    Object.fromEntries(formData.entries()) as Record<string, unknown>
+  void _legacyPocetLidi
+  const parsed = akceSchema.safeParse(rawClean)
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Neplatná data" }
@@ -242,12 +246,16 @@ export async function createAkce(formData: FormData) {
   }
 
   // F-0021b: dual-write PIN (plaintext + bcrypt hash).
+  // pocet_lidi je GENERATED v DB — NEzapisuj. pocet_brigadniku/koordinatoru
+  // defaultujeme na 0, pokud UI nepošle (legacy formy).
   const pinPair = await generatePinPair()
   const { data: inserted, error } = await supabase.from("akce").insert({
     ...parsed.data,
     cas_od: normalizeTime(parsed.data.cas_od),
     cas_do: normalizeTime(parsed.data.cas_do),
     nabidka_id: parsed.data.nabidka_id || null,
+    pocet_brigadniku: parsed.data.pocet_brigadniku ?? 0,
+    pocet_koordinatoru: parsed.data.pocet_koordinatoru ?? 0,
     pin_kod: pinPair.plaintext,
     pin_hash: pinPair.hash,
   }).select("id").single()

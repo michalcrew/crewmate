@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, UserCog, HardHat } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getNabidkaById } from "@/lib/actions/nabidky"
@@ -127,6 +127,8 @@ export default async function NabidkaDetailPage({
     cas_do: a.cas_do ?? null,
     misto: a.misto ?? null,
     pocet_lidi: a.pocet_lidi ?? null,
+    pocet_brigadniku: (a as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? null,
+    pocet_koordinatoru: (a as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? null,
     pin_kod: a.pin_kod ?? null,
     stav: a.stav ?? "planovana",
     prirazeni: (a.prirazeni ?? []) as AkceWithPrirazeni["prirazeni"],
@@ -154,6 +156,29 @@ export default async function NabidkaDetailPage({
             {nabidka.odmena && <span>· {nabidka.odmena}</span>}
             {isUkoncena && <span className="text-amber-600 font-medium">· Ukončeno</span>}
           </div>
+          <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1" title="Tým: Koordinátoři / Brigádníci">
+              <UserCog className="h-3.5 w-3.5 text-blue-600" />
+              {(nabidka as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0}
+              <span className="opacity-60">/</span>
+              <HardHat className="h-3.5 w-3.5 text-amber-600" />
+              {(nabidka as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0}
+            </span>
+            <span>·</span>
+            <span>
+              Sazba brig.:{" "}
+              {(nabidka as { sazba_brigadnik?: number | null }).sazba_brigadnik != null
+                ? `${(nabidka as { sazba_brigadnik?: number | null }).sazba_brigadnik} Kč/h`
+                : "nezadáno"}
+            </span>
+            <span>·</span>
+            <span>
+              Sazba koord.:{" "}
+              {(nabidka as { sazba_koordinator?: number | null }).sazba_koordinator != null
+                ? `${(nabidka as { sazba_koordinator?: number | null }).sazba_koordinator} Kč/h`
+                : "bez koordinátora"}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm">
@@ -170,7 +195,8 @@ export default async function NabidkaDetailPage({
                     misto: akce[0].misto,
                     cas_od: akce[0].cas_od,
                     cas_do: akce[0].cas_do,
-                    pocet_lidi: akce[0].pocet_lidi,
+                    pocet_brigadniku: akce[0].pocet_brigadniku,
+                    pocet_koordinatoru: akce[0].pocet_koordinatoru,
                   }
                 : null
             }
@@ -196,6 +222,8 @@ export default async function NabidkaDetailPage({
               defaultNazev={nabidka.nazev}
               defaultMisto={nabidka.misto ?? undefined}
               defaultKlient={nabidka.klient ?? undefined}
+              defaultPocetBrigadniku={(nabidka as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? null}
+              defaultPocetKoordinatoru={(nabidka as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? null}
             />
           )}
         </div>

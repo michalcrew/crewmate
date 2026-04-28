@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Calendar } from "lucide-react"
+import { Calendar, UserCog, HardHat } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -59,16 +59,14 @@ export function NadchazejiciAkceCard({ akce, className }: Props) {
         ) : (
           <div className="divide-y">
             {akce.map((a) => {
-              const target = a.pocet_lidi ?? 0
-              const pct =
-                target > 0 ? Math.min(100, Math.round((a.obsazeno / target) * 100)) : 0
-              const color =
-                pct >= 100
-                  ? "bg-green-500"
-                  : pct >= 50
-                    ? "bg-amber-400"
-                    : "bg-red-400"
+              const targetBrig = a.pocet_brigadniku ?? 0
+              const targetKoord = a.pocet_koordinatoru ?? 0
+              const brigPct = targetBrig > 0 ? Math.min(100, Math.round((a.obsazeno_brig / targetBrig) * 100)) : 0
+              const koordPct = targetKoord > 0 ? Math.min(100, Math.round((a.obsazeno_koord / targetKoord) * 100)) : 0
+              const brigColor = brigPct >= 100 ? "bg-green-500" : brigPct >= 50 ? "bg-amber-400" : "bg-red-400"
+              const koordColor = koordPct >= 100 ? "bg-green-500" : koordPct >= 50 ? "bg-amber-400" : "bg-red-400"
               const urgent = urgentLabel(a.urgentBadge)
+              const hasKoord = targetKoord > 0
               return (
                 <Link
                   key={a.id}
@@ -103,19 +101,36 @@ export function NadchazejiciAkceCard({ akce, className }: Props) {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 sm:w-36 shrink-0">
-                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                      {target > 0 && (
-                        <div
-                          className={cn("h-full rounded-full transition-all", color)}
-                          style={{ width: `${pct}%` }}
-                        />
-                      )}
+                  {/* Dva mini progress bary: koord (jen pokud > 0) + brig */}
+                  <div className="flex flex-col gap-1 sm:w-44 shrink-0">
+                    {hasKoord && (
+                      <div className="flex items-center gap-1.5" title="Koordinátoři: obsazeno / plán">
+                        <UserCog className="h-3 w-3 text-blue-600 shrink-0" />
+                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={cn("h-full rounded-full transition-all", koordColor)}
+                            style={{ width: `${koordPct}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 w-8 text-right">
+                          {a.obsazeno_koord}/{targetKoord}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5" title="Brigádníci: obsazeno / plán">
+                      <HardHat className="h-3 w-3 text-amber-600 shrink-0" />
+                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                        {targetBrig > 0 && (
+                          <div
+                            className={cn("h-full rounded-full transition-all", brigColor)}
+                            style={{ width: `${brigPct}%` }}
+                          />
+                        )}
+                      </div>
+                      <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 w-8 text-right">
+                        {a.obsazeno_brig}{targetBrig > 0 ? `/${targetBrig}` : ""}
+                      </span>
                     </div>
-                    <span className="text-xs tabular-nums text-muted-foreground shrink-0">
-                      {a.obsazeno}
-                      {target > 0 ? `/${target}` : ""}
-                    </span>
                   </div>
                 </Link>
               )

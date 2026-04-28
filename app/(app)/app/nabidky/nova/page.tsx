@@ -9,13 +9,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { createNabidka } from "@/lib/actions/nabidky"
 import { TYP_POZICE_OPTIONS } from "@/lib/constants"
-import { Calendar, Repeat, ArrowLeft } from "lucide-react"
+import { Calendar, Repeat, ArrowLeft, UserCog, HardHat } from "lucide-react"
 
 type Typ = "jednodenni" | "opakovana"
 
 export default function NovaNabidkaPage() {
   const router = useRouter()
   const [typ, setTyp] = useState<Typ | null>(null)
+  const [maKoordinatora, setMaKoordinatora] = useState(false)
 
   const [state, formAction, pending] = useActionState(
     async (_prev: { error?: string } | null, formData: FormData) => {
@@ -141,6 +142,52 @@ export default function NovaNabidkaPage() {
               </div>
             </div>
 
+            {/* Tým a sazby */}
+            <Card className="bg-muted/30">
+              <CardHeader>
+                <CardTitle className="text-base">Tým a sazby</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-0">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="nn-ma-koord"
+                    name="ma_koordinatora"
+                    className="h-4 w-4"
+                    checked={maKoordinatora}
+                    onChange={(e) => setMaKoordinatora(e.target.checked)}
+                  />
+                  <Label htmlFor="nn-ma-koord" className="font-normal flex items-center gap-1">
+                    <UserCog className="h-3.5 w-3.5" /> Mít koordinátora
+                  </Label>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="pocet_brigadniku" className="flex items-center gap-1">
+                      <HardHat className="h-3.5 w-3.5" /> Počet brigádníků
+                    </Label>
+                    <Input id="pocet_brigadniku" name="pocet_brigadniku" type="number" min="0" defaultValue={0} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="sazba_brigadnik">Sazba brigádníka (Kč/h)</Label>
+                    <Input id="sazba_brigadnik" name="sazba_brigadnik" type="number" min="0" step="0.01" placeholder="např. 180" />
+                  </div>
+                </div>
+                <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${maKoordinatora ? "" : "opacity-40 pointer-events-none"}`}>
+                  <div className="space-y-2">
+                    <Label htmlFor="pocet_koordinatoru" className="flex items-center gap-1">
+                      <UserCog className="h-3.5 w-3.5" /> Počet koordinátorů
+                    </Label>
+                    <Input id="pocet_koordinatoru" name="pocet_koordinatoru" type="number" min="0" defaultValue={0} disabled={!maKoordinatora} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="sazba_koordinator">Sazba koordinátora (Kč/h)</Label>
+                    <Input id="sazba_koordinator" name="sazba_koordinator" type="number" min="0" step="0.01" placeholder="např. 250" disabled={!maKoordinatora} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="space-y-2">
               <Label htmlFor="popis_prace">Popis práce</Label>
               <Textarea id="popis_prace" name="popis_prace" placeholder="Co bude brigádník dělat..." rows={3} />
@@ -187,10 +234,23 @@ export default function NovaNabidkaPage() {
                       <Input id="akce_cas_do" name="akce_cas_do" type="time" />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="akce_pocet_lidi">Počet lidí (kapacita akce)</Label>
-                    <Input id="akce_pocet_lidi" name="akce_pocet_lidi" type="number" min="1" placeholder="např. 10" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="akce_pocet_brigadniku" className="flex items-center gap-1">
+                        <HardHat className="h-3.5 w-3.5" /> Počet brigádníků na akci
+                      </Label>
+                      <Input id="akce_pocet_brigadniku" name="akce_pocet_brigadniku" type="number" min="0" placeholder="z týmu výše" />
+                    </div>
+                    <div className={`space-y-2 ${maKoordinatora ? "" : "opacity-40 pointer-events-none"}`}>
+                      <Label htmlFor="akce_pocet_koordinatoru" className="flex items-center gap-1">
+                        <UserCog className="h-3.5 w-3.5" /> Počet koordinátorů na akci
+                      </Label>
+                      <Input id="akce_pocet_koordinatoru" name="akce_pocet_koordinatoru" type="number" min="0" placeholder="z týmu výše" disabled={!maKoordinatora} />
+                    </div>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Pokud necháte prázdné, použijí se hodnoty ze sekce „Tým a sazby" výše.
+                  </p>
                 </CardContent>
               </Card>
             )}

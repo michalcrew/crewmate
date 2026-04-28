@@ -67,6 +67,8 @@ export type AkceWithPrirazeni = {
   cas_do: string | null
   misto: string | null
   pocet_lidi: number | null
+  pocet_brigadniku?: number | null
+  pocet_koordinatoru?: number | null
   pin_kod: string | null
   stav: string
   prirazeni: Array<{
