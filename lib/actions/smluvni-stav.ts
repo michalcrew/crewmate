@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { resolveInternalUser } from "@/lib/utils/internal-user"
 import { maybeAutoTransitionPipeline } from "./pipeline"
 import { signDppInputSchema, ukoncitDppInputSchema } from "@/lib/schemas/dotaznik"
 
@@ -40,11 +41,7 @@ async function getCurrentInternalUser() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { user: null, internalUser: null }
-  const { data: internalUser } = await supabase
-    .from("users")
-    .select("id, role, jmeno, prijmeni")
-    .eq("auth_user_id", user.id)
-    .single()
+  const internalUser = await resolveInternalUser(user.id, user.email)
   return { user, internalUser }
 }
 

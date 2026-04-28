@@ -17,6 +17,7 @@ import {
   type AlertFilterKey,
   type EnrichedBrigadnikForFilter,
 } from "./dashboard-filters"
+import { resolveInternalUser } from "@/lib/utils/internal-user"
 
 const brigadnikSchema = z.object({
   jmeno: z.string().min(1, "Jméno je povinné"),
@@ -433,16 +434,11 @@ export async function updateBrigadnikTyp(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  const { data: internalUser } = await supabase
-    .from("users")
-    .select("id, role")
-    .eq("auth_user_id", user.id)
-    .single()
+  const admin = createAdminClient()
+  const internalUser = await resolveInternalUser(user.id, user.email, admin)
 
   if (!internalUser) return { error: "Nepřihlášen" }
   if (internalUser.role !== "admin") return { error: "Nemáte oprávnění (admin only)" }
-
-  const admin = createAdminClient()
 
   const { data: current } = await admin
     .from("brigadnici")
@@ -512,8 +508,7 @@ export async function setDokumentacniStavManual(
   if (!user) return { error: "Nepřihlášen" }
 
   const admin = createAdminClient()
-  const { data: internalUser } = await admin
-    .from("users").select("id").eq("auth_user_id", user.id).single()
+  const internalUser = await resolveInternalUser(user.id, user.email, admin)
   if (!internalUser) return { error: "Interní uživatel nenalezen" }
 
   const rok = new Date().getFullYear()
@@ -643,8 +638,7 @@ export async function updateBrigadnikCitliveUdaje(
   if (!user) return { error: "Nepřihlášen" }
 
   const admin = createAdminClient()
-  const { data: internalUser } = await admin
-    .from("users").select("id").eq("auth_user_id", user.id).single()
+  const internalUser = await resolveInternalUser(user.id, user.email, admin)
   if (!internalUser) return { error: "Interní uživatel nenalezen" }
 
   const changedFields: string[] = []
@@ -970,8 +964,7 @@ export async function blokovatBrigadnika(
   if (!user) return { error: "Nepřihlášen" }
 
   const admin = createAdminClient()
-  const { data: internalUser } = await admin
-    .from("users").select("id").eq("auth_user_id", user.id).single()
+  const internalUser = await resolveInternalUser(user.id, user.email, admin)
   if (!internalUser) return { error: "Interní uživatel nenalezen" }
 
   const { error } = await admin
@@ -1010,8 +1003,7 @@ export async function odblokovatBrigadnika(
   if (!user) return { error: "Nepřihlášen" }
 
   const admin = createAdminClient()
-  const { data: internalUser } = await admin
-    .from("users").select("id").eq("auth_user_id", user.id).single()
+  const internalUser = await resolveInternalUser(user.id, user.email, admin)
   if (!internalUser) return { error: "Interní uživatel nenalezen" }
 
   const { error } = await admin

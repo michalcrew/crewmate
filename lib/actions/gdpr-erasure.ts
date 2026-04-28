@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sanitizeError } from "@/lib/utils/error-sanitizer"
+import { resolveInternalUser } from "@/lib/utils/internal-user"
 
 /**
  * F-0021e — GDPR čl. 17 (právo na výmaz) server actions.
@@ -42,17 +43,13 @@ async function requireAdmin(): Promise<AdminRoleCheck> {
   if (!user) return { ok: false, error: "Nepřihlášen" }
 
   const admin = createAdminClient()
-  const { data: me } = await admin
-    .from("users")
-    .select("id, role")
-    .eq("auth_user_id", user.id)
-    .single()
+  const me = await resolveInternalUser(user.id, user.email, admin)
 
   if (!me) return { ok: false, error: "Interní uživatel nenalezen" }
-  if ((me as { role: string }).role !== "admin") {
+  if (me.role !== "admin") {
     return { ok: false, error: "Nemáte oprávnění (jen admin)" }
   }
-  return { ok: true, userId: (me as { id: string }).id }
+  return { ok: true, userId: me.id }
 }
 
 /**

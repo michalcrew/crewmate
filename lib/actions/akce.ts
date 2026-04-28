@@ -4,20 +4,9 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getVocativeName } from "@/lib/utils/vocative"
+import { resolveInternalUserId } from "@/lib/utils/internal-user"
 import { normalizeTime } from "@/lib/utils/time"
 import { z } from "zod"
-
-// F-0015 HF — RLS lookup helper (pattern z F-0013 HF4c updateUserPodpis).
-// Auth check je pre-condition; DB lookup přes admin client (RLS fallback).
-async function resolveInternalUserId(authUserId: string): Promise<string | null> {
-  const admin = createAdminClient()
-  const { data } = await admin
-    .from("users")
-    .select("id")
-    .eq("auth_user_id", authUserId)
-    .single()
-  return (data as { id: string } | null)?.id ?? null
-}
 
 const akceSchema = z.object({
   nazev: z.string().min(1, "Název je povinný"),
@@ -557,7 +546,7 @@ export async function zrusitAkci(
   if (!user) return { error: "Nepřihlášen" }
 
   // Internal user id pro audit (RLS fallback viz resolveInternalUserId)
-  const internalUserId = await resolveInternalUserId(user.id)
+  const internalUserId = await resolveInternalUserId(user.id, user.email)
   if (!internalUserId) return { error: "Interní uživatel nenalezen" }
 
   // Načti nabidka_id pro revalidatePath
@@ -611,7 +600,7 @@ export async function updateAkceStav(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Nepřihlášen" }
 
-  const internalUserId = await resolveInternalUserId(user.id)
+  const internalUserId = await resolveInternalUserId(user.id, user.email)
   if (!internalUserId) return { error: "Interní uživatel nenalezen" }
 
   const { data: current } = await supabase
