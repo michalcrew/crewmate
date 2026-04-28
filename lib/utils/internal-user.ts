@@ -42,39 +42,60 @@ export async function resolveInternalUser(
   }
 
   const normalizedEmail = authEmail.trim().toLowerCase()
+
+  // 1) Exact (case-insensitive) match
   const { data: byEmail, error: emailErr } = await admin
     .from("users")
     .select("id, role, email")
     .ilike("email", normalizedEmail)
     .maybeSingle()
 
-  if (!byEmail) {
-    console.error("[resolveInternalUser] no row by auth_user_id nor email", {
-      authUserId,
-      authEmail: normalizedEmail,
-      primaryErr: primaryErr?.message,
-      emailErr: emailErr?.message,
-    })
-    return null
+  // 2) Fallback: substring match (pro případ whitespace nebo invisible
+  // znaků uvnitř email sloupce v DB). Pokud najdeme přesně 1 match,
+  // bereme ho. Více matches → ambiguous, vrátíme null.
+  let resolved = byEmail as { id: string; role: string; email: string | null } | null
+  if (!resolved) {
+    const { data: looseMatches, error: looseErr } = await admin
+      .from("users")
+      .select("id, role, email")
+      .ilike("email", `%${normalizedEmail}%`)
+      .limit(2)
+    if (looseMatches && looseMatches.length === 1) {
+      resolved = looseMatches[0] as { id: string; role: string; email: string | null }
+      console.warn("[resolveInternalUser] matched via substring fallback (whitespace?)", {
+        authUserId,
+        authEmail: normalizedEmail,
+        dbEmail: resolved.email,
+      })
+    } else {
+      console.error("[resolveInternalUser] no row by auth_user_id nor email", {
+        authUserId,
+        authEmail: normalizedEmail,
+        primaryErr: primaryErr?.message,
+        emailErr: emailErr?.message,
+        looseErr: looseErr?.message,
+        looseMatchCount: looseMatches?.length ?? 0,
+      })
+      return null
+    }
   }
-
   // Self-heal: aktualizuj auth_user_id na aktuální auth.uid().
   // Best-effort; pokud selže, vrať záznam i tak (další volání to zkusí znovu).
   const { error: updErr } = await admin
     .from("users")
     .update({ auth_user_id: authUserId })
-    .eq("id", (byEmail as { id: string }).id)
+    .eq("id", resolved.id)
 
   if (updErr) {
     console.error("[resolveInternalUser] self-heal update failed", {
       authUserId,
       authEmail: normalizedEmail,
-      userId: (byEmail as { id: string }).id,
+      userId: resolved.id,
       updErr: updErr.message,
     })
   }
 
-  return byEmail as { id: string; role: string; email: string | null }
+  return resolved
 }
 
 /**
