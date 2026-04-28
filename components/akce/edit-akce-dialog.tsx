@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Pencil } from "lucide-react"
+import { Pencil, UserCog, HardHat } from "lucide-react"
 import { updateAkce } from "@/lib/actions/akce"
 import { toast } from "sonner"
 
@@ -20,7 +20,8 @@ type Props = {
   akceStav: "planovana" | "probehla" | "zrusena"
   defaultCasOd: string | null
   defaultCasDo: string | null
-  defaultPocetLidi: number | null
+  defaultPocetBrigadniku: number | null
+  defaultPocetKoordinatoru: number | null
   /** Přenesená pole pro úplný update (schema vyžaduje nazev, datum, misto). */
   nazev: string
   datum: string
@@ -28,19 +29,22 @@ type Props = {
 }
 
 /**
- * Rychlý edit akce — čas začátku, čas konce, počet lidí.
+ * Rychlý edit akce — čas začátku, čas konce, počty brig + koord.
  *
  * Pravidla dle server updateAkce:
- *  - planovana: všechna 3 pole editovatelná
- *  - probehla: jen pocet_lidi (čas je zamčený, akce už proběhla)
+ *  - planovana: všechna pole editovatelná
+ *  - probehla: jen počty brig/koord (čas je zamčený, akce už proběhla)
  *  - zrusena: tlačítko se nerenderuje (parent page to zajišťuje)
+ *
+ * Sazby visí na zakázce, ne na akci.
  */
 export function EditAkceDialog({
   akceId,
   akceStav,
   defaultCasOd,
   defaultCasDo,
-  defaultPocetLidi,
+  defaultPocetBrigadniku,
+  defaultPocetKoordinatoru,
   nazev,
   datum,
   misto,
@@ -101,19 +105,34 @@ export function EditAkceDialog({
           </div>
           {isProbehla && (
             <p className="text-xs text-muted-foreground">
-              Akce už proběhla — čas editovat nelze, jen počet lidí.
+              Akce už proběhla — čas editovat nelze, jen počty.
             </p>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="ea-pocet">Počet lidí</Label>
-            <Input
-              id="ea-pocet"
-              name="pocet_lidi"
-              type="number"
-              min={1}
-              defaultValue={defaultPocetLidi ?? ""}
-              placeholder="např. 10"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="ea-pocet-brig" className="flex items-center gap-1">
+                <HardHat className="h-3.5 w-3.5" /> Brigádníci
+              </Label>
+              <Input
+                id="ea-pocet-brig"
+                name="pocet_brigadniku"
+                type="number"
+                min={0}
+                defaultValue={defaultPocetBrigadniku ?? 0}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ea-pocet-koord" className="flex items-center gap-1">
+                <UserCog className="h-3.5 w-3.5" /> Koordinátoři
+              </Label>
+              <Input
+                id="ea-pocet-koord"
+                name="pocet_koordinatoru"
+                type="number"
+                min={0}
+                defaultValue={defaultPocetKoordinatoru ?? 0}
+              />
+            </div>
           </div>
           {state?.error && (
             <p className="text-sm text-destructive">{state.error}</p>

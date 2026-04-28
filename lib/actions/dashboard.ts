@@ -25,8 +25,12 @@ export interface NadchazejiciAkce {
   cas_od: string | null
   misto: string | null
   pocet_lidi: number | null
+  pocet_brigadniku: number
+  pocet_koordinatoru: number
   nabidka_id: string | null
   obsazeno: number
+  obsazeno_brig: number
+  obsazeno_koord: number
   urgentBadge?: "dnes" | "zitra" | "za_3_dny"
 }
 
@@ -108,7 +112,7 @@ export async function getNadchazejiciAkceWithObsazenost(
 
   const { data, error } = await supabase
     .from("akce")
-    .select("id, nazev, datum, cas_od, misto, pocet_lidi, nabidka_id")
+    .select("id, nazev, datum, cas_od, misto, pocet_lidi, pocet_brigadniku, pocet_koordinatoru, nabidka_id")
     .eq("stav", "planovana")
     .gte("datum", today)
     .order("datum", { ascending: true })
@@ -117,33 +121,45 @@ export async function getNadchazejiciAkceWithObsazenost(
 
   if (error || !data) return []
 
-  // QA fix (F-0017 PR post-merge review): obsazenost = POUZE status='prirazeny'.
-  // Embed `prirazeni(count)` by ignoroval filter a zahrnul i náhradníky + odmítnuté,
-  // což přecenilo progress bar. Separate query s .in() + .eq() guarantuje správný count.
+  // Obsazenost rozdělená per role: status='prirazeny' (ignoruje náhradníky + odmítnuté).
   const akceIds = data.map(a => a.id)
-  const obsazenostMap = new Map<string, number>()
+  const brigMap = new Map<string, number>()
+  const koordMap = new Map<string, number>()
   if (akceIds.length > 0) {
     const { data: prData } = await supabase
       .from("prirazeni")
-      .select("akce_id")
+      .select("akce_id, role")
       .in("akce_id", akceIds)
       .eq("status", "prirazeny")
-    for (const p of prData ?? []) {
-      obsazenostMap.set(p.akce_id, (obsazenostMap.get(p.akce_id) ?? 0) + 1)
+    for (const p of (prData ?? []) as Array<{ akce_id: string; role: string | null }>) {
+      if (p.role === "koordinator") {
+        koordMap.set(p.akce_id, (koordMap.get(p.akce_id) ?? 0) + 1)
+      } else {
+        // brigadnik (default — viz CHECK constraint, role nemůže být NULL pro non-nahradnik)
+        brigMap.set(p.akce_id, (brigMap.get(p.akce_id) ?? 0) + 1)
+      }
     }
   }
 
-  return data.map((a) => ({
-    id: a.id,
-    nazev: a.nazev,
-    datum: a.datum,
-    cas_od: a.cas_od,
-    misto: a.misto,
-    pocet_lidi: a.pocet_lidi,
-    nabidka_id: a.nabidka_id,
-    obsazeno: obsazenostMap.get(a.id) ?? 0,
-    urgentBadge: urgentBadge(a.datum),
-  }))
+  return data.map((a) => {
+    const obsazenoBrig = brigMap.get(a.id) ?? 0
+    const obsazenoKoord = koordMap.get(a.id) ?? 0
+    return {
+      id: a.id,
+      nazev: a.nazev,
+      datum: a.datum,
+      cas_od: a.cas_od,
+      misto: a.misto,
+      pocet_lidi: a.pocet_lidi,
+      pocet_brigadniku: (a as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0,
+      pocet_koordinatoru: (a as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0,
+      nabidka_id: a.nabidka_id,
+      obsazeno: obsazenoBrig + obsazenoKoord,
+      obsazeno_brig: obsazenoBrig,
+      obsazeno_koord: obsazenoKoord,
+      urgentBadge: urgentBadge(a.datum),
+    }
+  })
 }
 
 // ================================================================

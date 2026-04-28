@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus } from "lucide-react"
+import { Plus, UserCog, HardHat } from "lucide-react"
 import { createAkce } from "@/lib/actions/akce"
 import { toast } from "sonner"
 
@@ -15,9 +15,19 @@ type Props = {
   defaultNazev?: string
   defaultMisto?: string
   defaultKlient?: string
+  /** Předvyplnění z nabídky (počty per role z PR A). */
+  defaultPocetBrigadniku?: number | null
+  defaultPocetKoordinatoru?: number | null
 }
 
-export function AddAkceDialog({ nabidkaId, defaultNazev, defaultMisto, defaultKlient }: Props) {
+export function AddAkceDialog({
+  nabidkaId,
+  defaultNazev,
+  defaultMisto,
+  defaultKlient,
+  defaultPocetBrigadniku,
+  defaultPocetKoordinatoru,
+}: Props) {
   const [open, setOpen] = useState(false)
 
   const [state, formAction, pending] = useActionState(
@@ -68,10 +78,30 @@ export function AddAkceDialog({ nabidkaId, defaultNazev, defaultMisto, defaultKl
               <Input id="aa-cas-do" name="cas_do" type="time" />
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="aa-pocet">Počet lidí</Label>
-              <Input id="aa-pocet" name="pocet_lidi" type="number" min="1" />
+              <Label htmlFor="aa-pocet-brig" className="flex items-center gap-1">
+                <HardHat className="h-3.5 w-3.5" /> Brigádníci
+              </Label>
+              <Input
+                id="aa-pocet-brig"
+                name="pocet_brigadniku"
+                type="number"
+                min="0"
+                defaultValue={defaultPocetBrigadniku ?? 0}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="aa-pocet-koord" className="flex items-center gap-1">
+                <UserCog className="h-3.5 w-3.5" /> Koordinátoři
+              </Label>
+              <Input
+                id="aa-pocet-koord"
+                name="pocet_koordinatoru"
+                type="number"
+                min="0"
+                defaultValue={defaultPocetKoordinatoru ?? 0}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="aa-klient">Klient</Label>

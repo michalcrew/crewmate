@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, MapPin, Calendar, Clock, Users, Key } from "lucide-react"
+import { ArrowLeft, MapPin, Calendar, Clock, Users, Key, UserCog, HardHat } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -114,6 +114,13 @@ export default async function AkceDetailPage({
             <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />{new Date(akce.datum).toLocaleDateString("cs-CZ")}</span>
             {akce.cas_od && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{akce.cas_od.slice(0, 5)}{akce.cas_do ? ` — ${akce.cas_do.slice(0, 5)}` : ""}</span>}
             {akce.misto && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{akce.misto}</span>}
+            <span className="flex items-center gap-1" title="Tým: Koordinátoři / Brigádníci">
+              <UserCog className="h-3.5 w-3.5 text-blue-600" />
+              {(akce as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0}
+              <span className="opacity-60">/</span>
+              <HardHat className="h-3.5 w-3.5 text-amber-600" />
+              {(akce as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -124,7 +131,8 @@ export default async function AkceDetailPage({
               akceStav={akceStav}
               defaultCasOd={akce.cas_od ?? null}
               defaultCasDo={akce.cas_do ?? null}
-              defaultPocetLidi={akce.pocet_lidi ?? null}
+              defaultPocetBrigadniku={(akce as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? null}
+              defaultPocetKoordinatoru={(akce as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? null}
               nazev={akce.nazev}
               datum={akce.datum}
               misto={akce.misto ?? null}

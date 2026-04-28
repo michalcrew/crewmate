@@ -9,7 +9,7 @@ import { z } from "zod"
 // F-0012 — Zod schemas
 // ================================================================
 
-const nabidkaCoreSchema = z.object({
+const nabidkaCoreShape = z.object({
   nazev: z.string().min(1, "Název je povinný"),
   klient: z.string().optional(),
   typ_pozice: z.string().optional(),
@@ -20,7 +20,7 @@ const nabidkaCoreSchema = z.object({
   datum_od: z.string().optional(),
   datum_do: z.string().optional(),
   // Team roles & rates: pocet_lidi je v DB GENERATED (součet níže), do
-  // INSERT/UPDATE se neposílá. UI form pole se přepíše v PR B.
+  // INSERT/UPDATE se neposílá.
   pocet_brigadniku: z.preprocess(
     (v) => (v === "" || v == null ? undefined : v),
     z.coerce.number().int().nonnegative().optional(),
@@ -29,7 +29,7 @@ const nabidkaCoreSchema = z.object({
     (v) => (v === "" || v == null ? undefined : v),
     z.coerce.number().int().nonnegative().optional(),
   ),
-  // Sazby per role na zakázce (snapshot do prirazeni.sazba_hodinova v PR B).
+  // Sazby per role na zakázce (snapshot do prirazeni.sazba_hodinova v PR C).
   // NULL u sazba_koordinator znamená "zakázka nemá povoleného koordinátora".
   sazba_brigadnik: z.preprocess(
     (v) => (v === "" || v == null ? undefined : v),
@@ -45,15 +45,13 @@ const nabidkaCoreSchema = z.object({
   co_nabizime: z.string().optional(),
 })
 
-const createJednodenniSchema = nabidkaCoreSchema.extend({
+const createJednodenniBase = nabidkaCoreShape.extend({
   typ: z.literal("jednodenni"),
   akce_datum: z.string().min(1, "Datum akce je povinné"),
   akce_misto: z.string().optional(),
   akce_cas_od: z.string().optional(),
   akce_cas_do: z.string().optional(),
-  // Stejně jako pocet_lidi na nabidky — akce.pocet_lidi je GENERATED.
-  // Akce-level rozdělení se zatím přes form neposílá (PR B doplní), ale
-  // schema necháváme připravené pro forward-compat.
+  // akce.pocet_lidi je GENERATED — posíláme jen rozdělení.
   akce_pocet_brigadniku: z.preprocess(
     (v) => (v === "" || v == null ? undefined : v),
     z.coerce.number().int().nonnegative().optional(),
@@ -64,17 +62,46 @@ const createJednodenniSchema = nabidkaCoreSchema.extend({
   ),
 })
 
-const createOpakovanaSchema = nabidkaCoreSchema.extend({
+const createOpakovanaBase = nabidkaCoreShape.extend({
   typ: z.literal("opakovana"),
 })
 
 const createNabidkaSchema = z.discriminatedUnion("typ", [
-  createJednodenniSchema,
-  createOpakovanaSchema,
-])
+  createJednodenniBase,
+  createOpakovanaBase,
+]).superRefine((val, ctx) => {
+  // Zopakuj refines (discriminatedUnion neumí přijmout effects schemas přímo)
+  const pb = (val as { pocet_brigadniku?: number }).pocet_brigadniku ?? 0
+  const pk = (val as { pocet_koordinatoru?: number }).pocet_koordinatoru ?? 0
+  const sb = (val as { sazba_brigadnik?: number }).sazba_brigadnik
+  const sk = (val as { sazba_koordinator?: number }).sazba_koordinator
+  if (pb >= 1 && sb == null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Pro brigádníka je nutné vyplnit hodinovou sazbu", path: ["sazba_brigadnik"] })
+  }
+  if (pk >= 1 && sk == null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Pro koordinátora je nutné vyplnit hodinovou sazbu", path: ["sazba_koordinator"] })
+  }
+  if (sk == null && pk > 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Bez sazby koordinátora nelze mít koordinátory v týmu", path: ["pocet_koordinatoru"] })
+  }
+})
 
 // Update schema: typ is NOT allowed in patch (immutability guard I3)
-const updateNabidkaSchema = nabidkaCoreSchema.strict()
+const updateNabidkaSchema = nabidkaCoreShape.strict().superRefine((val, ctx) => {
+  const pb = (val as { pocet_brigadniku?: number }).pocet_brigadniku ?? 0
+  const pk = (val as { pocet_koordinatoru?: number }).pocet_koordinatoru ?? 0
+  const sb = (val as { sazba_brigadnik?: number }).sazba_brigadnik
+  const sk = (val as { sazba_koordinator?: number }).sazba_koordinator
+  if (pb >= 1 && sb == null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Pro brigádníka je nutné vyplnit hodinovou sazbu", path: ["sazba_brigadnik"] })
+  }
+  if (pk >= 1 && sk == null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Pro koordinátora je nutné vyplnit hodinovou sazbu", path: ["sazba_koordinator"] })
+  }
+  if (sk == null && pk > 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Bez sazby koordinátora nelze mít koordinátory v týmu", path: ["pocet_koordinatoru"] })
+  }
+})
 
 // ================================================================
 // Helpers
@@ -223,21 +250,30 @@ export async function createNabidka(formData: FormData) {
 
   const raw = Object.fromEntries(formData.entries())
   // pocet_lidi (top-level i akce_pocet_lidi) je GENERATED v DB — vyhoď legacy
-  // form pole, schema je nezná. Forward-compat přijímáme pocet_brigadniku /
-  // pocet_koordinatoru (doplní PR B).
-  const { pocet_lidi: _legacyPL, akce_pocet_lidi: _legacyAPL, ...rest } =
-    raw as Record<string, unknown>
+  // form pole, schema je nezná.
+  const {
+    pocet_lidi: _legacyPL,
+    akce_pocet_lidi: _legacyAPL,
+    ma_koordinatora,
+    ...rest
+  } = raw as Record<string, unknown>
   void _legacyPL
   void _legacyAPL
+
+  // UI checkbox „Mít koordinátora" — pokud OFF, vynuluj pocet_koordinatoru
+  // i sazba_koordinator (NULL = zakázán).
+  const hasCoordinator = ma_koordinatora === "on" || ma_koordinatora === "true"
   const normalized = {
     ...rest,
     publikovano: rest.publikovano === "on" || rest.publikovano === "true",
     pocet_brigadniku: rest.pocet_brigadniku || undefined,
-    pocet_koordinatoru: rest.pocet_koordinatoru || undefined,
+    pocet_koordinatoru: hasCoordinator ? (rest.pocet_koordinatoru || undefined) : 0,
     akce_pocet_brigadniku: rest.akce_pocet_brigadniku || undefined,
-    akce_pocet_koordinatoru: rest.akce_pocet_koordinatoru || undefined,
+    akce_pocet_koordinatoru: hasCoordinator
+      ? (rest.akce_pocet_koordinatoru || undefined)
+      : 0,
     sazba_brigadnik: rest.sazba_brigadnik || undefined,
-    sazba_koordinator: rest.sazba_koordinator || undefined,
+    sazba_koordinator: hasCoordinator ? (rest.sazba_koordinator || undefined) : undefined,
   }
 
   const parsed = createNabidkaSchema.safeParse(normalized)
@@ -347,19 +383,25 @@ export async function updateNabidka(id: string, formData: FormData) {
     pocet_lidi: _legacyPL,
     akce_pocet_brigadniku,
     akce_pocet_koordinatoru,
+    ma_koordinatora,
     ...rest
   } = raw as Record<string, unknown>
   void _discardedTyp
   void _legacyAPL
   void _legacyPL
 
+  // UI checkbox „Mít koordinátora" — OFF znamená sazba_koordinator → NULL,
+  // pocet_koordinatoru → 0 (jak na zakázce, tak na akci).
+  const hasCoordinator = ma_koordinatora === "on" || ma_koordinatora === "true"
+  const akcePocetKoordEffective = hasCoordinator ? akce_pocet_koordinatoru : "0"
+
   const normalized = {
     ...rest,
     publikovano: rest.publikovano === "on" || rest.publikovano === "true",
     pocet_brigadniku: rest.pocet_brigadniku || undefined,
-    pocet_koordinatoru: rest.pocet_koordinatoru || undefined,
+    pocet_koordinatoru: hasCoordinator ? (rest.pocet_koordinatoru || undefined) : 0,
     sazba_brigadnik: rest.sazba_brigadnik || undefined,
-    sazba_koordinator: rest.sazba_koordinator || undefined,
+    sazba_koordinator: hasCoordinator ? (rest.sazba_koordinator || undefined) : undefined,
   }
 
   const parsed = updateNabidkaSchema.safeParse(normalized)
@@ -395,8 +437,30 @@ export async function updateNabidka(id: string, formData: FormData) {
   if (parsed.data.sazba_brigadnik !== undefined) {
     updatePayload.sazba_brigadnik = parsed.data.sazba_brigadnik
   }
-  if (parsed.data.sazba_koordinator !== undefined) {
-    updatePayload.sazba_koordinator = parsed.data.sazba_koordinator
+  // sazba_koordinator: explicitně zapisuj i NULL (uncheck „Mít koordinátora")
+  if (hasCoordinator) {
+    if (parsed.data.sazba_koordinator !== undefined) {
+      updatePayload.sazba_koordinator = parsed.data.sazba_koordinator
+    }
+  } else {
+    updatePayload.sazba_koordinator = null
+  }
+
+  // Edge case (Michal volba B): admin uncheck „Mít koordinátora", ale již
+  // existují prirazeni s role='koordinator'. Povol změnu, vrať warning v toastu.
+  let coordWarning: string | undefined
+  const wasCoordinator =
+    (current as { sazba_koordinator?: number | null }).sazba_koordinator !== null ||
+    ((current as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0) > 0
+  if (wasCoordinator && !hasCoordinator) {
+    const { count: koordPrirazeniCount } = await supabase
+      .from("prirazeni")
+      .select("id, akce!inner(nabidka_id)", { count: "exact", head: true })
+      .eq("akce.nabidka_id", id)
+      .eq("role", "koordinator")
+    if ((koordPrirazeniCount ?? 0) > 0) {
+      coordWarning = `Změnili jste sazbu koordinátora ale ${koordPrirazeniCount}+ koordinátor zůstává přiřazený se starou snapshot sazbou`
+    }
   }
 
   const { error } = await supabase
@@ -423,9 +487,9 @@ export async function updateNabidka(id: string, formData: FormData) {
         pocet_brigadniku: akce_pocet_brigadniku
           ? Number(akce_pocet_brigadniku)
           : parsed.data.pocet_brigadniku ?? 0,
-        pocet_koordinatoru: akce_pocet_koordinatoru
-          ? Number(akce_pocet_koordinatoru)
-          : parsed.data.pocet_koordinatoru ?? 0,
+        pocet_koordinatoru: akcePocetKoordEffective
+          ? Number(akcePocetKoordEffective)
+          : (hasCoordinator ? (parsed.data.pocet_koordinatoru ?? 0) : 0),
       }
 
       // Existing akce for this nabidka?
@@ -465,7 +529,7 @@ export async function updateNabidka(id: string, formData: FormData) {
   revalidatePath("/app/akce")
   revalidatePath("/prace")
   if (current.slug) revalidatePath(`/prace/${current.slug}`)
-  return { success: true }
+  return coordWarning ? { success: true, warning: coordWarning } : { success: true }
 }
 
 // ================================================================

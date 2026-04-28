@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
+import { UserCog, HardHat } from "lucide-react"
 import { createAkce } from "@/lib/actions/akce"
 
 type Props = {
@@ -58,21 +59,32 @@ export function NovaAkceForm({ nabidky }: Props) {
               <Input id="klient" name="klient" placeholder="např. SaSaZu Club" />
             </div>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="nabidka_id">Propojená nabídka</Label>
+            <select id="nabidka_id" name="nabidka_id" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+              <option value="">— bez nabídky —</option>
+              {nabidky.map((n) => (
+                <option key={n.id} value={n.id}>{n.nazev}</option>
+              ))}
+            </select>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="nabidka_id">Propojená nabídka</Label>
-              <select id="nabidka_id" name="nabidka_id" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                <option value="">— bez nabídky —</option>
-                {nabidky.map((n) => (
-                  <option key={n.id} value={n.id}>{n.nazev}</option>
-                ))}
-              </select>
+              <Label htmlFor="pocet_brigadniku" className="flex items-center gap-1">
+                <HardHat className="h-3.5 w-3.5" /> Počet brigádníků
+              </Label>
+              <Input id="pocet_brigadniku" name="pocet_brigadniku" type="number" min="0" defaultValue={0} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="pocet_lidi">Počet lidí</Label>
-              <Input id="pocet_lidi" name="pocet_lidi" type="number" min="1" />
+              <Label htmlFor="pocet_koordinatoru" className="flex items-center gap-1">
+                <UserCog className="h-3.5 w-3.5" /> Počet koordinátorů
+              </Label>
+              <Input id="pocet_koordinatoru" name="pocet_koordinatoru" type="number" min="0" defaultValue={0} />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Sazby se nastavují na zakázce (hodinová sazba se snapshotuje do přiřazení).
+          </p>
           <div className="space-y-2">
             <Label htmlFor="poznamky">Poznámky</Label>
             <Textarea id="poznamky" name="poznamky" rows={2} />

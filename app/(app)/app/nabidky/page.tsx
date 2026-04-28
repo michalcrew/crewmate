@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Plus, Briefcase } from "lucide-react"
+import { Plus, Briefcase, UserCog, HardHat } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -64,6 +64,7 @@ export default async function NabidkyPage({
                     <TableHead>Název</TableHead>
                     <TableHead>Město</TableHead>
                     <TableHead>Typ</TableHead>
+                    <TableHead>Tým</TableHead>
                     <TableHead className="text-center">Pipeline</TableHead>
                     <TableHead className="text-center">Publikovat</TableHead>
                     <TableHead className="text-center w-12"></TableHead>
@@ -88,6 +89,19 @@ export default async function NabidkyPage({
                         <TableCell className="text-muted-foreground text-sm">{n.mesto || n.misto || "—"}</TableCell>
                         <TableCell>
                           <TypBadge typ={n.typ} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-xs tabular-nums" title="Koordinátoři / Brigádníci">
+                            <span className="flex items-center gap-1">
+                              <UserCog className="h-3 w-3 text-blue-600" />
+                              {(n as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0}
+                            </span>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="flex items-center gap-1">
+                              <HardHat className="h-3 w-3 text-amber-600" />
+                              {(n as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0}
+                            </span>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-center gap-1 text-xs tabular-nums" title="Zájemce → Kontaktován → Nehotová admin → Vše vyřešeno · Odmítnutý">
