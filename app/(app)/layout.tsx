@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/layout/sidebar"
 import { UserMenu } from "@/components/layout/user-menu"
 import { Topbar } from "@/components/layout/topbar"
+import { TestModeBanner } from "@/components/layout/test-mode-banner"
 
 export default function AppLayout({
   children,
@@ -20,6 +21,8 @@ export default function AppLayout({
         <div className="md:hidden">
           <Topbar />
         </div>
+
+        <TestModeBanner />
 
         <main className="flex-1 overflow-auto">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

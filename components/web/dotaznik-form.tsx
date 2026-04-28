@@ -5,10 +5,11 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { CheckCircle } from "lucide-react"
+import { CheckCircle, Info } from "lucide-react"
 import { submitDotaznik } from "@/lib/actions/formular"
 import { ZDRAVOTNI_POJISTOVNY, VZDELANI_OPTIONS } from "@/lib/constants"
 import { NARODNOSTI } from "@/lib/schemas/dotaznik"
+import { isTestMode } from "@/lib/utils/test-mode"
 
 type Props = {
   token: string
@@ -18,6 +19,27 @@ type Props = {
 export function DotaznikForm({ token, defaultValues }: Props) {
   const [zpJina, setZpJina] = useState(false)
   const [isOsvc, setIsOsvc] = useState(false)
+
+  // F-0023: V test režimu dotazník nesbíráme — sbírá citlivá data
+  // (RČ, OP, banka, ZP), která nemají v testu být.
+  if (isTestMode()) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center space-y-4">
+          <Info className="h-12 w-12 text-blue-500 mx-auto" />
+          <h2 className="text-xl font-semibold">Test režim</h2>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            Aplikace momentálně běží v testovacím režimu. Tento formulář
+            zatím není aktivní — ozve se ti přímo koordinátorka nebo
+            náborářka, případně doplňuješ údaje až po nástupu.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Děkujeme za pochopení.
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   const [state, formAction, pending] = useActionState(
     async (_prev: { error?: string; success?: boolean } | null, formData: FormData) => {
