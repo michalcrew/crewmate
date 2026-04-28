@@ -50,19 +50,40 @@ export async function updateSession(request: NextRequest) {
   // QW-8 / SEC-015: token-based public routes must not leak token via
   // Referer header to external links and must not be cached (shared proxy
   // or browser back-button could expose token to another user).
-  // Applies to /formular/[token] (brigádník dotazník) and any other
-  // signed-link route we add in the future under these prefixes.
-  if (
+  const isTokenRoute =
     request.nextUrl.pathname.startsWith("/formular/") ||
     request.nextUrl.pathname.startsWith("/dochazka/")
-  ) {
+
+  if (isTokenRoute) {
     supabaseResponse.headers.set("Referrer-Policy", "no-referrer")
     supabaseResponse.headers.set(
       "Cache-Control",
       "no-store, no-cache, must-revalidate, private"
     )
     supabaseResponse.headers.set("Pragma", "no-cache")
+  } else {
+    // Default referrer policy pro všechny ostatní stránky.
+    supabaseResponse.headers.set(
+      "Referrer-Policy",
+      "strict-origin-when-cross-origin",
+    )
   }
+
+  // Globální bezpečnostní hlavičky pro celou aplikaci.
+  // Hodnoty zvolené tak, aby fungovaly s aktuálním Next.js + Supabase
+  // setupem (žádný iframe, žádné cizí senzory, HTTPS-only, MIME-strict).
+  supabaseResponse.headers.set("X-Frame-Options", "DENY")
+  supabaseResponse.headers.set("X-Content-Type-Options", "nosniff")
+  supabaseResponse.headers.set("X-DNS-Prefetch-Control", "off")
+  supabaseResponse.headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+  )
+  // HSTS — Vercel produkce běží přes HTTPS. 1 rok + subdomains.
+  supabaseResponse.headers.set(
+    "Strict-Transport-Security",
+    "max-age=31536000; includeSubDomains",
+  )
 
   return supabaseResponse
 }
