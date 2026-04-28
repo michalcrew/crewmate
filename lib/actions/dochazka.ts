@@ -143,51 +143,51 @@ type UpsertFieldResult =
   | { success: true; serverValue: string | number | null }
   | { error: string }
 
+/**
+ * Normalizace + zaokrouhlení času na 15 min (half-up).
+ * Přijímá 1-2 digit hour (např. „0:30" nebo „00:30"), s/bez sekund.
+ *  7:07 → 07:00 · 7:08 → 07:15 · 0:30 → 00:30 · 10:30 → 10:30
+ *  23:53 → 23:45 (clamp; 24:00 není validní time)
+ *
+ * Vrací { ok, value } — value je vždy normalizované „HH:MM" nebo null.
+ * Pokud vstup není ani prázdný ani validní HH:MM → ok: false.
+ */
+function normalizeAndRoundTime(raw: unknown): { ok: true; value: string | null } | { ok: false } {
+  if (raw == null || raw === "") return { ok: true, value: null }
+  const s = String(raw).trim()
+  if (s === "") return { ok: true, value: null }
+  const m = s.match(/^(\d{1,2}):(\d{1,2})(?::\d{1,2})?$/)
+  if (!m) return { ok: false }
+  const hh = Number(m[1])
+  const mm = Number(m[2])
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return { ok: false }
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return { ok: false }
+  const totalMin = hh * 60 + mm
+  const rounded = Math.round(totalMin / 15) * 15
+  const clamped = Math.min(rounded, 23 * 60 + 45)
+  const rh = Math.floor(clamped / 60)
+  const rm = clamped % 60
+  return { ok: true, value: `${String(rh).padStart(2, "0")}:${String(rm).padStart(2, "0")}` }
+}
+
 const FIELD_VALIDATORS = {
-  prichod: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, "Neplatný čas").nullable(),
-  odchod: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, "Neplatný čas").nullable(),
   hodnoceni: z.coerce.number().int().min(1).max(5).nullable(),
   poznamka: z.string().max(500, "Poznámka max 500 znaků").nullable(),
 } as const
 
-/**
- * User feedback 22.4.: čas příchod/odchod se automaticky zaokrouhlí
- * matematicky na 15 minut (half-up na nearest čtvrthodinu).
- *  7:07 → 7:00
- *  7:08 → 7:15
- *  7:22 → 7:15
- *  7:23 → 7:30
- *  7:52 → 7:45
- *  7:53 → 8:00
- *  23:53 → 24:00 → wrap na 23:45 (aby nepřetekla 23:59; edge case).
- */
-function roundTimeTo15(raw: string): string {
-  const m = raw.match(/^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/)
-  if (!m) return raw
-  const hh = Number(m[1])
-  const mm = Number(m[2])
-  const totalMin = hh * 60 + mm
-  const rounded = Math.round(totalMin / 15) * 15
-  // Clamp na [0, 23:45] — 24:00 není validní time
-  const clamped = Math.min(rounded, 23 * 60 + 45)
-  const rh = Math.floor(clamped / 60)
-  const rm = clamped % 60
-  return `${String(rh).padStart(2, "0")}:${String(rm).padStart(2, "0")}`
-}
-
 function validateFieldValue(field: DochazkaField, value: unknown): { ok: true; value: string | number | null } | { ok: false; error: string } {
+  if (field === "prichod" || field === "odchod") {
+    const t = normalizeAndRoundTime(value)
+    if (!t.ok) return { ok: false, error: "Neplatný čas" }
+    return { ok: true, value: t.value }
+  }
   const normalized = value === "" || value === undefined ? null : value
   const schema = FIELD_VALIDATORS[field]
   const parsed = schema.safeParse(normalized)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Neplatná hodnota" }
   }
-  let cleanValue = parsed.data as string | number | null
-  // Zaokrouhlení jen pro time fields (prichod/odchod) a jen pokud není NULL.
-  if ((field === "prichod" || field === "odchod") && typeof cleanValue === "string") {
-    cleanValue = roundTimeTo15(cleanValue)
-  }
-  return { ok: true, value: cleanValue }
+  return { ok: true, value: parsed.data as string | number | null }
 }
 
 /**
