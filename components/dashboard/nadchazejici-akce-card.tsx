@@ -63,8 +63,22 @@ export function NadchazejiciAkceCard({ akce, className }: Props) {
               const targetKoord = a.pocet_koordinatoru ?? 0
               const brigPct = targetBrig > 0 ? Math.min(100, Math.round((a.obsazeno_brig / targetBrig) * 100)) : 0
               const koordPct = targetKoord > 0 ? Math.min(100, Math.round((a.obsazeno_koord / targetKoord) * 100)) : 0
-              const brigColor = brigPct >= 100 ? "bg-green-500" : brigPct >= 50 ? "bg-amber-400" : "bg-red-400"
-              const koordColor = koordPct >= 100 ? "bg-green-500" : koordPct >= 50 ? "bg-amber-400" : "bg-red-400"
+              const brigOverhang = targetBrig > 0 && a.obsazeno_brig > targetBrig
+              const koordOverhang = targetKoord > 0 && a.obsazeno_koord > targetKoord
+              const brigColor = brigOverhang
+                ? "bg-orange-500"
+                : brigPct >= 100
+                  ? "bg-green-500"
+                  : brigPct >= 50
+                    ? "bg-amber-400"
+                    : "bg-red-400"
+              const koordColor = koordOverhang
+                ? "bg-orange-500"
+                : koordPct >= 100
+                  ? "bg-green-500"
+                  : koordPct >= 50
+                    ? "bg-amber-400"
+                    : "bg-red-400"
               const urgent = urgentLabel(a.urgentBadge)
               const hasKoord = targetKoord > 0
               return (
@@ -112,7 +126,14 @@ export function NadchazejiciAkceCard({ akce, className }: Props) {
                             style={{ width: `${koordPct}%` }}
                           />
                         </div>
-                        <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 w-8 text-right">
+                        <span
+                          className={cn(
+                            "text-[10px] tabular-nums shrink-0 w-8 text-right",
+                            koordOverhang
+                              ? "text-orange-600 font-medium"
+                              : "text-muted-foreground",
+                          )}
+                        >
                           {a.obsazeno_koord}/{targetKoord}
                         </span>
                       </div>
@@ -127,7 +148,14 @@ export function NadchazejiciAkceCard({ akce, className }: Props) {
                           />
                         )}
                       </div>
-                      <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 w-8 text-right">
+                      <span
+                        className={cn(
+                          "text-[10px] tabular-nums shrink-0 w-8 text-right",
+                          brigOverhang
+                            ? "text-orange-600 font-medium"
+                            : "text-muted-foreground",
+                        )}
+                      >
                         {a.obsazeno_brig}{targetBrig > 0 ? `/${targetBrig}` : ""}
                       </span>
                     </div>

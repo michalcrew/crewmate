@@ -10,9 +10,12 @@ import { revalidatePath } from "next/cache"
 // F-0022 — Měsíční výplatní přehled (read-only load, PR 1)
 // ============================================================================
 
+export type PrirazeniRole = "brigadnik" | "koordinator" | null
+
 export type VyplataCell = {
   prirazeniId: string
   dochazkaId: string | null
+  role: PrirazeniRole
   prichod: string | null
   odchod: string | null
   hodinCelkem: number | null
@@ -55,6 +58,7 @@ type ViewRow = {
   akce_id: string
   brigadnik_id: string
   prirazeni_status: string | null
+  role: string | null
   sazba_hodinova: number | null
   akce_nazev: string
   akce_datum: string
@@ -149,9 +153,12 @@ export async function getVyplataMesic(mesic: string): Promise<
     }
 
     const celkem = Number(r.celkem_za_akci ?? 0)
+    const roleNorm: PrirazeniRole =
+      r.role === "koordinator" || r.role === "brigadnik" ? r.role : null
     row.cells[r.akce_id] = {
       prirazeniId: r.prirazeni_id,
       dochazkaId: r.dochazka_id,
+      role: roleNorm,
       prichod: r.prichod,
       odchod: r.odchod,
       hodinCelkem: r.hodin_celkem !== null ? Number(r.hodin_celkem) : null,

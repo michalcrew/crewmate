@@ -27,7 +27,7 @@ export async function GET(
   })
 }
 
-const COLS_PER_AKCE = 6 // Přích | Odch | Hod | Sazba | Bonus | Celkem
+const COLS_PER_AKCE = 7 // Přích | Odch | Role | Hod | Sazba | Bonus | Celkem
 const SECTION_BG = "FFE5E7EB" // šedá pro section / celkové řádky
 const TOTAL_BG = "FFD1FAE5" // světle zelená pro grand total
 const HEADER_BG = "FFF3F4F6"
@@ -77,6 +77,7 @@ async function buildWorkbook(data: VyplataMesicData): Promise<ExcelJS.Workbook> 
     ...data.akce.flatMap(() => [
       { width: 8 }, // přích
       { width: 8 }, // odch
+      { width: 6 }, // role (KOO/BRI)
       { width: 7 }, // hod
       { width: 10 }, // sazba
       { width: 10 }, // bonus
@@ -213,10 +214,11 @@ function renderSection(
     const startCol = 2 + idx * COLS_PER_AKCE
     subHeaderRow.getCell(startCol + 0).value = "Příchod"
     subHeaderRow.getCell(startCol + 1).value = "Odchod"
-    subHeaderRow.getCell(startCol + 2).value = "Hod."
-    subHeaderRow.getCell(startCol + 3).value = "Sazba"
-    subHeaderRow.getCell(startCol + 4).value = "Bonus"
-    subHeaderRow.getCell(startCol + 5).value = "Celkem"
+    subHeaderRow.getCell(startCol + 2).value = "Role"
+    subHeaderRow.getCell(startCol + 3).value = "Hod."
+    subHeaderRow.getCell(startCol + 4).value = "Sazba"
+    subHeaderRow.getCell(startCol + 5).value = "Bonus"
+    subHeaderRow.getCell(startCol + 6).value = "Celkem"
   })
   subHeaderRow.getCell(totalCols).value = ""
   subHeaderRow.font = { bold: true, size: 9, color: { argb: "FF374151" } }
@@ -239,21 +241,25 @@ function renderSection(
       if (!c) return
       dataRow.getCell(startCol + 0).value = fmtTime(c.prichod) || ""
       dataRow.getCell(startCol + 1).value = fmtTime(c.odchod) || ""
+      // Role: KOO / BRI / "" (NULL u starých dat)
+      dataRow.getCell(startCol + 2).value =
+        c.role === "koordinator" ? "KOO" : c.role === "brigadnik" ? "BRI" : ""
+      dataRow.getCell(startCol + 2).alignment = { horizontal: "center" }
       if (c.hodinCelkem !== null && c.hodinCelkem !== undefined) {
-        dataRow.getCell(startCol + 2).value = Number(c.hodinCelkem)
-        dataRow.getCell(startCol + 2).numFmt = "0.0"
+        dataRow.getCell(startCol + 3).value = Number(c.hodinCelkem)
+        dataRow.getCell(startCol + 3).numFmt = "0.0"
       }
       if (c.sazbaHodinova !== null && c.sazbaHodinova !== undefined) {
-        dataRow.getCell(startCol + 3).value = Number(c.sazbaHodinova)
-        dataRow.getCell(startCol + 3).numFmt = '#,##0" Kč/h"'
+        dataRow.getCell(startCol + 4).value = Number(c.sazbaHodinova)
+        dataRow.getCell(startCol + 4).numFmt = '#,##0" Kč/h"'
       }
       if (c.extraOdmenaKc !== null && c.extraOdmenaKc !== undefined && c.extraOdmenaKc > 0) {
-        dataRow.getCell(startCol + 4).value = Number(c.extraOdmenaKc)
-        dataRow.getCell(startCol + 4).numFmt = '#,##0" Kč"'
+        dataRow.getCell(startCol + 5).value = Number(c.extraOdmenaKc)
+        dataRow.getCell(startCol + 5).numFmt = '#,##0" Kč"'
       }
       if (c.celkemZaAkci > 0) {
-        dataRow.getCell(startCol + 5).value = c.celkemZaAkci
-        dataRow.getCell(startCol + 5).numFmt = '#,##0" Kč"'
+        dataRow.getCell(startCol + 6).value = c.celkemZaAkci
+        dataRow.getCell(startCol + 6).numFmt = '#,##0" Kč"'
       }
     })
     dataRow.getCell(totalCols).value = row.rowTotal
@@ -266,12 +272,12 @@ function renderSection(
   // Total row
   const totalRow = ws.getRow(r)
   totalRow.getCell(1).value = totalLabel
-  // Per-akce sums
+  // Per-akce sums (Celkem je teď index 6 — po přidání Role na index 2)
   akce.forEach((a, idx) => {
     const startCol = 2 + idx * COLS_PER_AKCE
     const sum = rows.reduce((s, row) => s + (row.cells[a.id]?.celkemZaAkci ?? 0), 0)
     if (sum > 0) {
-      const cell = totalRow.getCell(startCol + 5)
+      const cell = totalRow.getCell(startCol + 6)
       cell.value = sum
       cell.numFmt = '#,##0" Kč"'
     }

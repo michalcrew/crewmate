@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { UserCog, HardHat } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -89,7 +90,19 @@ function AkceTable({ rows, emptyText }: { rows: AkceRow[]; emptyText: string }) 
                 <NabidkaCell nabidka={r.akce.nabidka} />
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
-                {r.role ?? "—"}
+                {r.role === "koordinator" ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <UserCog className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Koordinátor</span>
+                  </span>
+                ) : r.role === "brigadnik" ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <HardHat className="h-3.5 w-3.5 text-amber-600" />
+                    <span>Brigádník</span>
+                  </span>
+                ) : (
+                  "—"
+                )}
               </TableCell>
               <TableCell>
                 <Badge variant="outline" className={`${stav.className} text-xs`}>
