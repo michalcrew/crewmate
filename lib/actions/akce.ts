@@ -830,7 +830,8 @@ export async function smazatPrirazeni(
  * znalosti interního user.id — admin si ho vytáhne z auth contextu sám.
  */
 export async function oznacitNepriselFromAdmin(
-  prirazeniId: string
+  prirazeniId: string,
+  duvod?: string,
 ): Promise<{ success: true } | { error: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -841,7 +842,7 @@ export async function oznacitNepriselFromAdmin(
     return { error: "Nemáte oprávnění" }
   }
   const { markNepriselBrigadnik } = await import("./dochazka")
-  const result = await markNepriselBrigadnik(prirazeniId, { type: "admin", id: internalUser.id })
+  const result = await markNepriselBrigadnik(prirazeniId, { type: "admin", id: internalUser.id }, duvod)
   // dochazka.ts nedělá revalidatePath — uděláme to tady
   if ("success" in result) {
     const { data: prir } = await supabase

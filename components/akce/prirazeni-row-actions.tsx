@@ -4,6 +4,8 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { MoreVertical, UserX, UserMinus, RotateCcw, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -43,16 +45,25 @@ export function PrirazeniRowActions({ prirazeniId, status, brigadnikName, disabl
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [zruseniOpen, setZruseniOpen] = useState(false)
+  const [duvod, setDuvod] = useState("")
 
   const label = brigadnikName ? brigadnikName : "Brigádník"
 
-  const handleNeprisel = () => {
+  const handleZrusenyConfirm = () => {
+    const trimmed = duvod.trim()
+    if (!trimmed) {
+      toast.error("Zadejte důvod zrušení")
+      return
+    }
     startTransition(async () => {
-      const result = await oznacitNepriselFromAdmin(prirazeniId)
+      const result = await oznacitNepriselFromAdmin(prirazeniId, trimmed)
       if ("error" in result) {
         toast.error(result.error)
       } else {
-        toast.success(`${label} označen/a jako nepřítomný/á`)
+        toast.success(`${label} označen/a jako zrušený/á`)
+        setZruseniOpen(false)
+        setDuvod("")
         router.refresh()
       }
     })
@@ -114,9 +125,9 @@ export function PrirazeniRowActions({ prirazeniId, status, brigadnikName, disabl
         <DropdownMenuContent align="end">
           {status === "prirazeny" && (
             <>
-              <DropdownMenuItem onClick={handleNeprisel} disabled={isPending}>
+              <DropdownMenuItem onClick={() => setZruseniOpen(true)} disabled={isPending}>
                 <UserX className="h-4 w-4" />
-                Označit jako nepřišel
+                Označit jako zrušený
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleDoNahradniku} disabled={isPending}>
                 <UserMinus className="h-4 w-4" />
@@ -126,9 +137,9 @@ export function PrirazeniRowActions({ prirazeniId, status, brigadnikName, disabl
           )}
           {status === "nahradnik" && (
             <>
-              <DropdownMenuItem onClick={handleNeprisel} disabled={isPending}>
+              <DropdownMenuItem onClick={() => setZruseniOpen(true)} disabled={isPending}>
                 <UserX className="h-4 w-4" />
-                Označit jako nepřišel
+                Označit jako zrušený
               </DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
@@ -148,6 +159,40 @@ export function PrirazeniRowActions({ prirazeniId, status, brigadnikName, disabl
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <Dialog open={zruseniOpen} onOpenChange={(o) => { setZruseniOpen(o); if (!o) setDuvod("") }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Označit jako zrušený</DialogTitle>
+            <DialogDescription>
+              {label} bude označen/a jako zrušený/á (status „vypadl"). Případná zapsaná docházka se vymaže.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="duvod-zruseni">Důvod zrušení *</Label>
+            <Textarea
+              id="duvod-zruseni"
+              value={duvod}
+              onChange={(e) => setDuvod(e.target.value)}
+              placeholder="Např. nemoc, omluva, nepřišel bez omluvy…"
+              rows={3}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setZruseniOpen(false); setDuvod("") }}
+              disabled={isPending}
+            >
+              Zrušit
+            </Button>
+            <Button onClick={handleZrusenyConfirm} disabled={isPending || !duvod.trim()}>
+              {isPending ? "Ukládám…" : "Označit jako zrušený"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <DialogContent>
