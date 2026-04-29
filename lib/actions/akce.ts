@@ -657,6 +657,235 @@ export async function povysitNahradnika(
   return { success: true }
 }
 
+/**
+ * Přesun přiřazeného brigádníka do náhradníků.
+ * - role/sazba se nuluje (universal nahradnik)
+ * - poradi_nahradnik = max+1
+ * - případnou docházku (prichod/odchod) vyčistíme — nedává smysl pro náhradníka
+ */
+export async function presunoutDoNahradniku(
+  prirazeniId: string
+): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const internalUser = await resolveInternalUser(user.id, user.email)
+  if (!internalUser) return { error: "Interní uživatel nenalezen (kód U2)" }
+  if (!["admin", "naborar"].includes(internalUser.role)) {
+    return { error: "Nemáte oprávnění upravovat přiřazení" }
+  }
+
+  const { data: prir } = await supabase
+    .from("prirazeni")
+    .select("id, akce_id, brigadnik_id, role, status")
+    .eq("id", prirazeniId)
+    .single()
+  if (!prir) return { error: "Přiřazení nenalezeno" }
+
+  const { data: akce } = await supabase
+    .from("akce")
+    .select("id, stav, nabidka_id")
+    .eq("id", prir.akce_id)
+    .single()
+  if (!akce) return { error: "Akce nenalezena" }
+  if (akce.stav !== "planovana") {
+    return { error: `Akci nelze upravovat (status: ${akce.stav})` }
+  }
+
+  // Noop — už je náhradník
+  if (prir.status === "nahradnik") return { success: true }
+
+  const puvodniRole = prir.role
+
+  // Spočítej max poradi_nahradnik
+  const { data: existingNahr } = await supabase
+    .from("prirazeni")
+    .select("poradi_nahradnik")
+    .eq("akce_id", prir.akce_id)
+    .eq("status", "nahradnik")
+    .order("poradi_nahradnik", { ascending: false })
+    .limit(1)
+  const maxPoradi = (existingNahr?.[0] as { poradi_nahradnik?: number | null } | undefined)?.poradi_nahradnik ?? 0
+
+  const { error: updErr } = await supabase
+    .from("prirazeni")
+    .update({
+      status: "nahradnik",
+      role: null,
+      sazba_hodinova: null,
+      poradi_nahradnik: maxPoradi + 1,
+    })
+    .eq("id", prirazeniId)
+  if (updErr) return { error: updErr.message }
+
+  // Vyčisti docházku, pokud má vyplněný čas (admin client kvůli RLS)
+  const admin = createAdminClient()
+  const { data: existingDoch } = await admin
+    .from("dochazka")
+    .select("id, prichod, odchod")
+    .eq("prirazeni_id", prirazeniId)
+    .maybeSingle()
+  if (existingDoch && (existingDoch.prichod || existingDoch.odchod)) {
+    await admin
+      .from("dochazka")
+      .update({ prichod: null, odchod: null, hodin_celkem: null })
+      .eq("id", existingDoch.id)
+  }
+
+  // Audit
+  const { data: brigadnik } = await supabase
+    .from("brigadnici")
+    .select("jmeno, prijmeni")
+    .eq("id", prir.brigadnik_id)
+    .single()
+
+  await supabase.from("historie").insert({
+    brigadnik_id: prir.brigadnik_id,
+    akce_id: prir.akce_id,
+    nabidka_id: akce.nabidka_id,
+    user_id: internalUser.id,
+    typ: "prirazeni_do_nahradniku",
+    popis: `${brigadnik?.prijmeni ?? ""} ${brigadnik?.jmeno ?? ""} přesunut/a do náhradníků (původní role: ${puvodniRole ?? "—"})`,
+    metadata: {
+      from_status: prir.status,
+      from_role: puvodniRole,
+      to_status: "nahradnik",
+      poradi_nahradnik: maxPoradi + 1,
+    },
+  })
+
+  revalidatePath(`/app/akce/${prir.akce_id}`)
+  if (akce.nabidka_id) revalidatePath(`/app/nabidky/${akce.nabidka_id}`)
+  return { success: true }
+}
+
+/**
+ * Smaž přiřazení úplně (pro odstranění omylem přidaného náhradníka).
+ * CASCADE smaže i dochazka řádek (FK ON DELETE CASCADE).
+ */
+export async function smazatPrirazeni(
+  prirazeniId: string
+): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const internalUser = await resolveInternalUser(user.id, user.email)
+  if (!internalUser) return { error: "Interní uživatel nenalezen (kód U2)" }
+  if (!["admin", "naborar"].includes(internalUser.role)) {
+    return { error: "Nemáte oprávnění mazat přiřazení" }
+  }
+
+  const { data: prir } = await supabase
+    .from("prirazeni")
+    .select("id, akce_id, brigadnik_id, role, status")
+    .eq("id", prirazeniId)
+    .single()
+  if (!prir) return { error: "Přiřazení nenalezeno" }
+
+  const { data: akce } = await supabase
+    .from("akce")
+    .select("id, stav, nabidka_id, nazev")
+    .eq("id", prir.akce_id)
+    .single()
+  if (!akce) return { error: "Akce nenalezena" }
+  if (akce.stav !== "planovana") {
+    return { error: `Akci nelze upravovat (status: ${akce.stav})` }
+  }
+
+  const { data: brigadnik } = await supabase
+    .from("brigadnici")
+    .select("jmeno, prijmeni")
+    .eq("id", prir.brigadnik_id)
+    .single()
+
+  const { error: delErr } = await supabase
+    .from("prirazeni")
+    .delete()
+    .eq("id", prirazeniId)
+  if (delErr) return { error: delErr.message }
+
+  // Audit (po smazání — prirazeni_id už neexistuje, ukládáme jen do popisu/metadata)
+  await supabase.from("historie").insert({
+    brigadnik_id: prir.brigadnik_id,
+    akce_id: prir.akce_id,
+    nabidka_id: akce.nabidka_id,
+    user_id: internalUser.id,
+    typ: "prirazeni_smazano",
+    popis: `${brigadnik?.prijmeni ?? ""} ${brigadnik?.jmeno ?? ""} odebrán/a z akce "${akce.nazev}"`,
+    metadata: {
+      from_status: prir.status,
+      from_role: prir.role,
+    },
+  })
+
+  revalidatePath(`/app/akce/${prir.akce_id}`)
+  if (akce.nabidka_id) revalidatePath(`/app/nabidky/${akce.nabidka_id}`)
+  return { success: true }
+}
+
+/**
+ * Wrappery pro markNepriselBrigadnik / undoNepriselBrigadnik volané z UI bez
+ * znalosti interního user.id — admin si ho vytáhne z auth contextu sám.
+ */
+export async function oznacitNepriselFromAdmin(
+  prirazeniId: string
+): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+  const internalUser = await resolveInternalUser(user.id, user.email)
+  if (!internalUser) return { error: "Interní uživatel nenalezen (kód U2)" }
+  if (!["admin", "naborar"].includes(internalUser.role)) {
+    return { error: "Nemáte oprávnění" }
+  }
+  const { markNepriselBrigadnik } = await import("./dochazka")
+  const result = await markNepriselBrigadnik(prirazeniId, { type: "admin", id: internalUser.id })
+  // dochazka.ts nedělá revalidatePath — uděláme to tady
+  if ("success" in result) {
+    const { data: prir } = await supabase
+      .from("prirazeni")
+      .select("akce_id, akce:akce(nabidka_id)")
+      .eq("id", prirazeniId)
+      .single()
+    if (prir) {
+      revalidatePath(`/app/akce/${prir.akce_id}`)
+      const nab = (prir.akce as unknown as { nabidka_id?: string | null } | null)
+      if (nab?.nabidka_id) revalidatePath(`/app/nabidky/${nab.nabidka_id}`)
+    }
+  }
+  return result
+}
+
+export async function undoNepriselFromAdmin(
+  prirazeniId: string
+): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+  const internalUser = await resolveInternalUser(user.id, user.email)
+  if (!internalUser) return { error: "Interní uživatel nenalezen (kód U2)" }
+  if (!["admin", "naborar"].includes(internalUser.role)) {
+    return { error: "Nemáte oprávnění" }
+  }
+  const { undoNepriselBrigadnik } = await import("./dochazka")
+  const result = await undoNepriselBrigadnik(prirazeniId, { type: "admin", id: internalUser.id })
+  if ("success" in result) {
+    const { data: prir } = await supabase
+      .from("prirazeni")
+      .select("akce_id, akce:akce(nabidka_id)")
+      .eq("id", prirazeniId)
+      .single()
+    if (prir) {
+      revalidatePath(`/app/akce/${prir.akce_id}`)
+      const nab = (prir.akce as unknown as { nabidka_id?: string | null } | null)
+      if (nab?.nabidka_id) revalidatePath(`/app/nabidky/${nab.nabidka_id}`)
+    }
+  }
+  return result
+}
+
 // ================================================================
 // F-0012: assign brigadnik from pipeline to akce (multi-container DnD)
 // ================================================================
