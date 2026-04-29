@@ -16,6 +16,7 @@ import { AkceStavSelector } from "@/components/akce/akce-stav-selector"
 import { AkceDetailZrusitButton } from "@/components/akce/akce-detail-zrusit-button"
 import { EditAkceDialog } from "@/components/akce/edit-akce-dialog"
 import { PrirazeniRoleSelect } from "@/components/akce/prirazeni-role-select"
+import { PrirazeniSazbaInput } from "@/components/akce/prirazeni-sazba-input"
 import { PovysitNahradnikaDialog } from "@/components/akce/povysit-nahradnika-dialog"
 import { PrirazeniRowActions } from "@/components/akce/prirazeni-row-actions"
 import { DokumentacniStavSelect } from "@/components/brigadnici/dokumentacni-stav-select"
@@ -138,6 +139,31 @@ export default async function AkceDetailPage({
   const akceStav = (akce.stav ?? "planovana") as "planovana" | "probehla" | "zrusena"
   const isZrusena = akceStav === "zrusena"
   const isProbehla = akceStav === "probehla"
+
+  // Načti důvody zrušení pro vypadlé brigádníky.
+  // Důvod se ukládá do `historie.metadata.duvod` při akci `prirazeni_neprisel`.
+  // Pro každého vypadlého najdeme nejnovější záznam.
+  const duvodyMap = new Map<string, string>()
+  if (vypadli.length > 0) {
+    const supabase = await createClient()
+    const vypadliIds = vypadli.map((p) => p.id)
+    const { data: historieRows } = await supabase
+      .from("historie")
+      .select("metadata, popis, created_at")
+      .eq("akce_id", id)
+      .eq("typ", "prirazeni_neprisel")
+      .order("created_at", { ascending: false })
+    for (const row of (historieRows ?? []) as Array<{
+      metadata: { prirazeni_id?: string | null; duvod?: string | null } | null
+      popis: string | null
+    }>) {
+      const pid = row.metadata?.prirazeni_id ?? null
+      if (pid && vypadliIds.includes(pid) && !duvodyMap.has(pid)) {
+        const duvod = row.metadata?.duvod
+        if (duvod && duvod.trim()) duvodyMap.set(pid, duvod.trim())
+      }
+    }
+  }
 
   return (
     <div>
@@ -332,7 +358,11 @@ export default async function AkceDetailPage({
                         />
                       </TableCell>
                       <TableCell className="text-sm">
-                        {sazba != null ? `${sazba} Kč/h` : <span className="text-muted-foreground">—</span>}
+                        <PrirazeniSazbaInput
+                          prirazeniId={p.id}
+                          currentSazba={sazba ?? null}
+                          disabled={isZrusena || isProbehla}
+                        />
                       </TableCell>
                       <TableCell>
                         {b ? (
@@ -441,12 +471,14 @@ export default async function AkceDetailPage({
                 <TableRow>
                   <TableHead>Brigádník</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Důvod</TableHead>
                   <TableHead className="text-right">Akce</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {vypadli.map((p) => {
                   const b = p.brigadnik as { id: string; jmeno: string; prijmeni: string; telefon: string } | null
+                  const duvod = duvodyMap.get(p.id)
                   return (
                     <TableRow key={p.id}>
                       <TableCell>
@@ -458,6 +490,13 @@ export default async function AkceDetailPage({
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {p.role === "koordinator" ? "👔 Koordinátor" : p.role === "brigadnik" ? "👷 Brigádník" : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm max-w-md">
+                        {duvod ? (
+                          <span title={duvod} className="line-clamp-2">{duvod}</span>
+                        ) : (
+                          <span className="text-muted-foreground italic">bez uvedení důvodu</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <PrirazeniRowActions

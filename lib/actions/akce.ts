@@ -114,9 +114,11 @@ export async function getAkce(filter?: {
   const limit = Math.min(Math.max(filter?.limit ?? 30, 1), 1000)
   const offset = Math.max(filter?.offset ?? 0, 0)
 
+  // Pro listing potřebujeme počítat obsazenost per role JEN ze status='prirazeny'
+  // (náhradníci a vypadlí se nezapočítávají). Načteme detail přiřazení a počítáme client-side.
   let query = supabase
     .from("akce")
-    .select("*, nabidka:nabidky(id, nazev), prirazeni_count:prirazeni(count)", { count: "exact" })
+    .select("*, nabidka:nabidky(id, nazev), prirazeni(id, role, status)", { count: "exact" })
 
   // Per-tab WHERE
   if (stav !== "all") {
@@ -536,6 +538,83 @@ export async function updatePrirazeniRole(
     metadata: {
       role_before: prir.role,
       role_after: newRole,
+      sazba_before: prir.sazba_hodinova,
+      sazba_after: novaSazba,
+    },
+  })
+
+  revalidatePath(`/app/akce/${prir.akce_id}`)
+  if (akce.nabidka_id) revalidatePath(`/app/nabidky/${akce.nabidka_id}`)
+  return { success: true }
+}
+
+/**
+ * Ruční úprava sazby na řádku přiřazení.
+ * - Jen u status='prirazeny' a planované akce.
+ * - Hodnota 0 — 9999 Kč/h, NULL = vymazat (vrátit „bez sazby").
+ * - Audit log do historie.
+ */
+export async function updatePrirazeniSazba(
+  prirazeniId: string,
+  novaSazba: number | null
+): Promise<{ success: true } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Nepřihlášen" }
+
+  const internalUser = await resolveInternalUser(user.id, user.email)
+  if (!internalUser) return { error: "Interní uživatel nenalezen (kód U2)" }
+  if (!["admin", "naborar"].includes(internalUser.role)) {
+    return { error: "Nemáte oprávnění měnit sazbu" }
+  }
+
+  // Validace
+  if (novaSazba != null) {
+    if (!Number.isFinite(novaSazba) || novaSazba < 0 || novaSazba > 9999) {
+      return { error: "Sazba musí být mezi 0 a 9999 Kč/h" }
+    }
+    novaSazba = Math.round(novaSazba * 100) / 100 // 2 desetinná místa
+  }
+
+  const { data: prir } = await supabase
+    .from("prirazeni")
+    .select("id, akce_id, brigadnik_id, role, status, sazba_hodinova")
+    .eq("id", prirazeniId)
+    .single()
+  if (!prir) return { error: "Přiřazení nenalezeno" }
+
+  if (prir.status !== "prirazeny") {
+    return { error: "Sazbu lze měnit jen u přiřazeného brigádníka" }
+  }
+
+  const { data: akce } = await supabase
+    .from("akce")
+    .select("id, stav, nabidka_id")
+    .eq("id", prir.akce_id)
+    .single()
+  if (!akce) return { error: "Akce nenalezena" }
+  if (akce.stav !== "planovana") {
+    return { error: "Sazbu nelze měnit u proběhlé/zrušené akce" }
+  }
+
+  if (prir.sazba_hodinova === novaSazba) {
+    return { success: true }
+  }
+
+  const { error: updErr } = await supabase
+    .from("prirazeni")
+    .update({ sazba_hodinova: novaSazba })
+    .eq("id", prirazeniId)
+  if (updErr) return { error: updErr.message }
+
+  await supabase.from("historie").insert({
+    brigadnik_id: prir.brigadnik_id,
+    akce_id: prir.akce_id,
+    nabidka_id: akce.nabidka_id,
+    user_id: internalUser.id,
+    typ: "prirazeni_sazba_zmena",
+    popis: `Sazba změněna ${prir.sazba_hodinova ?? "—"} → ${novaSazba ?? "—"} Kč/h`,
+    metadata: {
       sazba_before: prir.sazba_hodinova,
       sazba_after: novaSazba,
     },
