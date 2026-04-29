@@ -17,6 +17,7 @@ import { AkceDetailZrusitButton } from "@/components/akce/akce-detail-zrusit-but
 import { EditAkceDialog } from "@/components/akce/edit-akce-dialog"
 import { PrirazeniRoleSelect } from "@/components/akce/prirazeni-role-select"
 import { PovysitNahradnikaDialog } from "@/components/akce/povysit-nahradnika-dialog"
+import { PrirazeniRowActions } from "@/components/akce/prirazeni-row-actions"
 import { DokumentacniStavSelect } from "@/components/brigadnici/dokumentacni-stav-select"
 
 export const metadata: Metadata = { title: "Detail akce" }
@@ -289,6 +290,7 @@ export default async function AkceDetailPage({
                   <TableHead>Odchod</TableHead>
                   <TableHead>Hodin</TableHead>
                   <TableHead>Hodnocení</TableHead>
+                  <TableHead className="text-right">Akce</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -347,6 +349,14 @@ export default async function AkceDetailPage({
                       <TableCell>{d?.odchod?.slice(0, 5) ?? "—"}</TableCell>
                       <TableCell>{d?.hodin_celkem != null ? `${d.hodin_celkem}h` : "—"}</TableCell>
                       <TableCell>{d?.hodnoceni ? `${d.hodnoceni}/5` : "—"}</TableCell>
+                      <TableCell className="text-right">
+                        <PrirazeniRowActions
+                          prirazeniId={p.id}
+                          status="prirazeny"
+                          brigadnikName={b ? `${b.prijmeni} ${b.jmeno}` : undefined}
+                          disabled={isZrusena || isProbehla}
+                        />
+                      </TableCell>
                     </TableRow>
                   )
                 })}
@@ -394,13 +404,21 @@ export default async function AkceDetailPage({
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          {!isZrusena && !isProbehla && (
-                            <PovysitNahradnikaDialog
+                          <div className="flex items-center justify-end gap-1">
+                            {!isZrusena && !isProbehla && (
+                              <PovysitNahradnikaDialog
+                                prirazeniId={p.id}
+                                brigadnikJmeno={jmenoFull}
+                                koordPovolen={sazbaKoordinator != null}
+                              />
+                            )}
+                            <PrirazeniRowActions
                               prirazeniId={p.id}
-                              brigadnikJmeno={jmenoFull}
-                              koordPovolen={sazbaKoordinator != null}
+                              status="nahradnik"
+                              brigadnikName={jmenoFull}
+                              disabled={isZrusena || isProbehla}
                             />
-                          )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     )
@@ -423,6 +441,7 @@ export default async function AkceDetailPage({
                 <TableRow>
                   <TableHead>Brigádník</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead className="text-right">Akce</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -439,6 +458,14 @@ export default async function AkceDetailPage({
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {p.role === "koordinator" ? "👔 Koordinátor" : p.role === "brigadnik" ? "👷 Brigádník" : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <PrirazeniRowActions
+                          prirazeniId={p.id}
+                          status="vypadl"
+                          brigadnikName={b ? `${b.prijmeni} ${b.jmeno}` : undefined}
+                          disabled={isZrusena || isProbehla}
+                        />
                       </TableCell>
                     </TableRow>
                   )

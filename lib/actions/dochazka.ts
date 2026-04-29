@@ -401,7 +401,8 @@ async function auditUpsertFieldChange(
  */
 export async function markNepriselBrigadnik(
   prirazeniId: string,
-  editor: DochazkaEditor
+  editor: DochazkaEditor,
+  duvod?: string,
 ): Promise<{ success: true } | { error: string }> {
   // Rate limit (per editor) — lehčí limit 20 req/min
   const rlKey = editor.type === "admin" ? `neprisel:admin:${editor.id}` : `neprisel:koord:${prirazeniId}`
@@ -460,13 +461,17 @@ export async function markNepriselBrigadnik(
     .eq("id", prirazeniId)
   if (error) return { error: "Nepodařilo se uložit" }
 
+  const duvodTrimmed = duvod?.trim() || null
+  const popisBase = existingDoch && (existingDoch.prichod || existingDoch.odchod)
+    ? `Přiřazení zrušeno (předchozí časy vymazány: příchod=${existingDoch.prichod ?? "—"}, odchod=${existingDoch.odchod ?? "—"})`
+    : "Přiřazení zrušeno"
+  const popis = duvodTrimmed ? `${popisBase} — důvod: ${duvodTrimmed}` : popisBase
+
   await supabase.from("historie").insert({
     brigadnik_id: brigadnikId,
     akce_id: akceId,
     typ: "prirazeni_neprisel",
-    popis: existingDoch && (existingDoch.prichod || existingDoch.odchod)
-      ? `Brigádník nepřišel (předchozí časy vymazány: příchod=${existingDoch.prichod ?? "—"}, odchod=${existingDoch.odchod ?? "—"})`
-      : "Brigádník nepřišel na akci",
+    popis,
     metadata: {
       prirazeni_id: prirazeniId,
       editor_type: editor.type,
@@ -474,6 +479,7 @@ export async function markNepriselBrigadnik(
       previous_status: prir.status,
       cleared_prichod: existingDoch?.prichod ?? null,
       cleared_odchod: existingDoch?.odchod ?? null,
+      duvod: duvodTrimmed,
     },
   })
 
