@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { UserCog, HardHat } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
   upsertSazbaHodinova,
   upsertDyskoKc,
+  type PrirazeniRole,
   type VyplataAkce,
   type VyplataCell,
   type VyplataMesicData,
@@ -98,6 +100,38 @@ const fmtTime = (t: string | null) => (t ? t.slice(0, 5) : "—")
 const fmtDatum = (iso: string) => {
   const d = new Date(iso)
   return `${d.getDate()}. ${d.getMonth() + 1}.`
+}
+
+function RoleIcon({ role, className }: { role: PrirazeniRole; className?: string }) {
+  if (role === "koordinator") {
+    return (
+      <UserCog
+        className={cn("h-3 w-3 text-blue-600", className)}
+        aria-label="Koordinátor"
+      />
+    )
+  }
+  if (role === "brigadnik") {
+    return (
+      <HardHat
+        className={cn("h-3 w-3 text-amber-600", className)}
+        aria-label="Brigádník"
+      />
+    )
+  }
+  return null
+}
+
+/** Sečti odpracované hodiny per role pro daného brigádníka (přes všechny akce). */
+function sumHoursByRole(row: VyplataRow): { koord: number; brig: number } {
+  let koord = 0
+  let brig = 0
+  for (const c of Object.values(row.cells)) {
+    const h = c.hodinCelkem ?? 0
+    if (c.role === "koordinator") koord += h
+    else if (c.role === "brigadnik") brig += h
+  }
+  return { koord, brig }
 }
 
 type TypFilter = "vse" | "dpp" | "osvc"
@@ -407,6 +441,8 @@ function DataRow({
   onSazbaSave: SaveHandler
   onBonusSave: SaveHandler
 }) {
+  const { koord, brig } = sumHoursByRole(row)
+  const hasMixedRoles = koord > 0 && brig > 0
   return (
     <tr className="hover:bg-muted/30">
       <td className="sticky left-0 z-10 bg-background border-b border-r px-3 py-2 font-medium whitespace-nowrap">
@@ -416,6 +452,19 @@ function DataRow({
         >
           {row.prijmeni} {row.jmeno}
         </Link>
+        {hasMixedRoles && (
+          <div className="text-[10px] text-muted-foreground font-normal flex items-center gap-1.5 mt-0.5">
+            <span className="inline-flex items-center gap-0.5">
+              <UserCog className="h-3 w-3 text-blue-600" />
+              {koord.toFixed(1)}h
+            </span>
+            <span className="text-muted-foreground/40">+</span>
+            <span className="inline-flex items-center gap-0.5">
+              <HardHat className="h-3 w-3 text-amber-600" />
+              {brig.toFixed(1)}h
+            </span>
+          </div>
+        )}
       </td>
       {akce.map((a) => {
         const c = row.cells[a.id]
@@ -468,7 +517,10 @@ function Cell({
         {fmtTime(cell.odchod)}
       </td>
       <td className="border-b px-2 py-2 text-center text-xs tabular-nums whitespace-nowrap">
-        {fmtHod(cell.hodinCelkem)}
+        <span className="inline-flex items-center gap-1 justify-center">
+          <RoleIcon role={cell.role} />
+          {fmtHod(cell.hodinCelkem)}
+        </span>
       </td>
       <td className="border-b px-1 py-1 whitespace-nowrap min-w-[80px]">
         <EditableNumberCell
