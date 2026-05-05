@@ -14,7 +14,10 @@ const RATE_LIMIT_WINDOW_MIN = 15
 async function getClientIp(): Promise<string | null> {
   const h = await headers()
   const forwarded = h.get("x-forwarded-for")
-  if (forwarded) return forwarded.split(",")[0].trim()
+  if (forwarded) {
+    const first = forwarded.split(",")[0]
+    if (first) return first.trim()
+  }
   return h.get("x-real-ip")
 }
 
