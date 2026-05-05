@@ -1,7 +1,49 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+// Rozdělení aplikace na 2 domény podle hostu:
+// - PUBLIC_HOST (crewmate.cz) — marketing web, /prace, /formular/*, /dochazka/*
+// - INTERNAL_HOST (appka.crewmate.cz) — /login, /app/*
+// Když uživatel zadá interní cestu na veřejné doméně (nebo opačně), middleware
+// ho přesměruje na správnou doménu. Preview URL z Vercelu nebo localhost se
+// neomezují (host nematchuje žádné z env hodnot).
+function isInternalPath(pathname: string): boolean {
+  return pathname.startsWith("/app") || pathname === "/login"
+}
+
+function isPublicPath(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname.startsWith("/prace") ||
+    pathname.startsWith("/formular/") ||
+    pathname.startsWith("/dochazka/") ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml"
+  )
+}
+
 export async function updateSession(request: NextRequest) {
+  const host = (request.headers.get("host") ?? "").toLowerCase()
+  const internalHost = (process.env.NEXT_PUBLIC_INTERNAL_HOST ?? "").toLowerCase()
+  const publicHost = (process.env.NEXT_PUBLIC_PUBLIC_HOST ?? "").toLowerCase()
+  const path = request.nextUrl.pathname
+  const search = request.nextUrl.search
+
+  // www.crewmate.cz → crewmate.cz (jen pokud je publicHost nastavený)
+  if (publicHost && host === `www.${publicHost}`) {
+    return NextResponse.redirect(`https://${publicHost}${path}${search}`, 308)
+  }
+
+  // Cross-domain redirect: interní cesta na veřejném hostu → přesměrovat na interní host
+  if (publicHost && internalHost && host === publicHost && isInternalPath(path)) {
+    return NextResponse.redirect(`https://${internalHost}${path}${search}`, 307)
+  }
+
+  // Cross-domain redirect: veřejná cesta na interním hostu → přesměrovat na veřejný host
+  if (publicHost && internalHost && host === internalHost && isPublicPath(path)) {
+    return NextResponse.redirect(`https://${publicHost}${path}${search}`, 307)
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })
