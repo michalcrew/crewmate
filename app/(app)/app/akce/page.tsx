@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Plus, Calendar as CalendarIcon, ChevronLeft, ChevronRight, UserCog, HardHat } from "lucide-react"
+import { Plus, Calendar as CalendarIcon, ChevronLeft, ChevronRight, HardHat, Briefcase } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -112,19 +112,28 @@ export default async function AkcePage({
                     <TableHead>Datum</TableHead>
                     <TableHead>Místo</TableHead>
                     <TableHead>Nabídka</TableHead>
-                    <TableHead>Tým</TableHead>
-                    <TableHead>Kapacita</TableHead>
+                    <TableHead>Obsazenost</TableHead>
                     <TableHead>Stav</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {akce.map((a) => {
-                    const prirazeno = (a.prirazeni_count as { count: number }[])?.[0]?.count ?? 0
-                    const target = a.pocet_lidi ?? 0
-                    const pct = target > 0 ? Math.round((prirazeno / target) * 100) : 0
+                    // Obsazenost per role — počítáme JEN status='prirazeny'.
+                    // Náhradníci a vypadlí se nezapočítávají do obsazenosti.
+                    const prirazeniRows = ((a as { prirazeni?: { role: string | null; status: string }[] }).prirazeni ?? [])
+                      .filter((p) => p.status === "prirazeny")
+                    const obsazenoBrig = prirazeniRows.filter((p) => p.role === "brigadnik").length
+                    const obsazenoKoord = prirazeniRows.filter((p) => p.role === "koordinator").length
+                    const targetBrig = (a as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0
+                    const targetKoord = (a as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0
                     const daysUntil = Math.ceil((new Date(a.datum).getTime() - Date.now()) / 86400000)
                     const isUrgent = daysUntil <= 3 && daysUntil >= 0 && a.stav === "planovana"
+                    // Barva čísla podle obsazenosti per role
+                    const pctBrig = targetBrig > 0 ? (obsazenoBrig / targetBrig) * 100 : 100
+                    const pctKoord = targetKoord > 0 ? (obsazenoKoord / targetKoord) * 100 : 100
+                    const colorBrig = pctBrig >= 100 ? "text-green-600" : pctBrig >= 50 ? "text-amber-600" : "text-red-600"
+                    const colorKoord = pctKoord >= 100 ? "text-green-600" : pctKoord >= 50 ? "text-amber-600" : "text-red-600"
 
                     return (
                       <TableRow key={a.id} className={isUrgent ? "border-l-4 border-l-amber-400" : ""}>
@@ -143,32 +152,24 @@ export default async function AkcePage({
                           {(a.nabidka as { nazev: string } | null)?.nazev || "—"}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2 text-xs tabular-nums" title="Koordinátoři / Brigádníci">
-                            <span className="flex items-center gap-1">
-                              <UserCog className="h-3 w-3 text-blue-600" />
-                              {(a as { pocet_koordinatoru?: number | null }).pocet_koordinatoru ?? 0}
+                          <div className="flex items-center gap-3 text-sm tabular-nums">
+                            <span
+                              className={`flex items-center gap-1 ${colorBrig}`}
+                              title={`Brigádníci: ${obsazenoBrig} z ${targetBrig} obsazeno`}
+                            >
+                              <HardHat className="h-4 w-4" />
+                              <span className="font-medium">{obsazenoBrig}/{targetBrig}</span>
                             </span>
-                            <span className="text-muted-foreground">/</span>
-                            <span className="flex items-center gap-1">
-                              <HardHat className="h-3 w-3 text-amber-600" />
-                              {(a as { pocet_brigadniku?: number | null }).pocet_brigadniku ?? 0}
-                            </span>
+                            {targetKoord > 0 && (
+                              <span
+                                className={`flex items-center gap-1 ${colorKoord}`}
+                                title={`Koordinátoři: ${obsazenoKoord} z ${targetKoord} obsazeno`}
+                              >
+                                <Briefcase className="h-4 w-4" />
+                                <span className="font-medium">{obsazenoKoord}/{targetKoord}</span>
+                              </span>
+                            )}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          {target > 0 ? (
-                            <div className="flex items-center gap-2">
-                              <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${pct >= 100 ? "bg-green-500" : pct >= 50 ? "bg-amber-400" : "bg-red-400"}`}
-                                  style={{ width: `${Math.min(100, pct)}%` }}
-                                />
-                              </div>
-                              <span className="text-xs tabular-nums text-muted-foreground">{prirazeno}/{target}</span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground tabular-nums">{prirazeno}</span>
-                          )}
                         </TableCell>
                         <TableCell>
                           <AkceStavSelector
