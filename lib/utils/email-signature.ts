@@ -14,7 +14,7 @@ export type UserSignatureSource = {
 
 function logoImgTag(): string {
   const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL ?? "https://crewmate-steel.vercel.app"
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://crewmate.cz"
   const base = appUrl.replace(/\/$/, "")
   const logoUrl = `${base}/logo-crewmate.svg`
   return `<img src="${logoUrl}" alt="Crewmate" style="max-height: 40px; display: block; margin-bottom: 8px; background-color: #ffffff;" />`
