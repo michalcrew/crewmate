@@ -1,13 +1,27 @@
+import { redirect } from "next/navigation"
 import { Sidebar } from "@/components/layout/sidebar"
 import { UserMenu } from "@/components/layout/user-menu"
 import { Topbar } from "@/components/layout/topbar"
 import { TestModeBanner } from "@/components/layout/test-mode-banner"
+import { createClient } from "@/lib/supabase/server"
+import { is2FAEnabled } from "@/lib/2fa/config"
+import { isDeviceTrusted } from "@/lib/2fa/trust-cookie"
 
-export default function AppLayout({
+export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // 2FA gate: pokud je 2FA zapnuté a uživatel nemá důvěryhodné zařízení,
+  // pošleme ho na /login/2fa. Middleware ho sem nepustil bez auth, takže
+  // user je tady vždy přihlášený.
+  if (is2FAEnabled()) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user && !(await isDeviceTrusted(user.id))) {
+      redirect("/login/2fa")
+    }
+  }
   return (
     <div className="flex min-h-screen bg-background">
       {/* Desktop sidebar — server component (renders UserMenu with logout) */}
