@@ -1,5 +1,15 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { is2FAEnabled, TWO_FA_TRUST_COOKIE, TWO_FA_SESSION_COOKIE } from "@/lib/2fa/config"
+import { verifyTrustToken } from "@/lib/2fa/trust-cookie"
+
+function isDeviceTrustedForRequest(request: NextRequest, userId: string): boolean {
+  const trust = request.cookies.get(TWO_FA_TRUST_COOKIE)?.value
+  if (verifyTrustToken(trust, userId)) return true
+  const session = request.cookies.get(TWO_FA_SESSION_COOKIE)?.value
+  if (verifyTrustToken(session, userId)) return true
+  return false
+}
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -33,15 +43,33 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Protected routes: /app/*
-  if (request.nextUrl.pathname.startsWith("/app") && !user) {
+  const path = request.nextUrl.pathname
+  const twoFAOn = is2FAEnabled()
+  const twoFATrusted = !!user && twoFAOn && isDeviceTrustedForRequest(request, user.id)
+
+  // Nepřihlášený uživatel na /app/* nebo /login/2fa → /login
+  if ((path.startsWith("/app") || path === "/login/2fa") && !user) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
   }
 
-  // Redirect logged-in users away from /login
-  if (request.nextUrl.pathname === "/login" && user) {
+  // Přihlášený uživatel na /app/* ale 2FA neověřené (a 2FA je zapnuté) → /login/2fa
+  if (path.startsWith("/app") && user && twoFAOn && !twoFATrusted) {
+    const url = request.nextUrl.clone()
+    url.pathname = "/login/2fa"
+    return NextResponse.redirect(url)
+  }
+
+  // Přihlášený uživatel na /login → posuneme dál
+  if (path === "/login" && user) {
+    const url = request.nextUrl.clone()
+    url.pathname = twoFAOn && !twoFATrusted ? "/login/2fa" : "/app"
+    return NextResponse.redirect(url)
+  }
+
+  // Přihlášený a už ověřený (nebo 2FA off) na /login/2fa → /app
+  if (path === "/login/2fa" && user && (!twoFAOn || twoFATrusted)) {
     const url = request.nextUrl.clone()
     url.pathname = "/app"
     return NextResponse.redirect(url)
