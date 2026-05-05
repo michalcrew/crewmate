@@ -43,13 +43,18 @@ export async function UserMenu() {
             {profile.role === "admin" ? "Admin" : "Náborářka"}
           </Badge>
         </div>
-        <form action={logout}>
-          <Button variant="ghost" size="icon" type="submit" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-            <LogOut className="h-4 w-4" />
-            <span className="sr-only">Odhlásit</span>
-          </Button>
-        </form>
       </div>
+      <form action={logout} className="mt-3">
+        <Button
+          variant="outline"
+          size="sm"
+          type="submit"
+          className="w-full justify-center gap-2 text-muted-foreground hover:text-foreground"
+        >
+          <LogOut className="h-4 w-4" />
+          Odhlásit se
+        </Button>
+      </form>
     </div>
   )
 }

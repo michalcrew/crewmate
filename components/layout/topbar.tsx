@@ -42,9 +42,9 @@ export async function Topbar() {
             </div>
           )}
           <form action={logout}>
-            <Button variant="ghost" size="icon" type="submit">
+            <Button variant="outline" size="sm" type="submit" className="gap-2">
               <LogOut className="h-4 w-4" />
-              <span className="sr-only">Odhlásit</span>
+              <span className="hidden sm:inline">Odhlásit se</span>
             </Button>
           </form>
         </div>
