@@ -1,6 +1,11 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+// Pozn.: 2FA gate (kontrola, jestli má uživatel ověřené zařízení) běží
+// v server komponentě /app/(app)/layout.tsx, ne tady — middleware běží
+// na Edge runtime, který nepodporuje node:crypto pro HMAC verifikaci
+// trust cookies. Layout běží na Node runtime a má přístup k cookies().
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -33,15 +38,18 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Protected routes: /app/*
-  if (request.nextUrl.pathname.startsWith("/app") && !user) {
+  const path = request.nextUrl.pathname
+
+  // Nepřihlášený uživatel na /app/* nebo /login/2fa → /login
+  if ((path.startsWith("/app") || path === "/login/2fa") && !user) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
   }
 
-  // Redirect logged-in users away from /login
-  if (request.nextUrl.pathname === "/login" && user) {
+  // Přihlášený uživatel na /login → /app
+  // (2FA gate v /app layoutu zajistí redirect na /login/2fa pokud potřeba)
+  if (path === "/login" && user) {
     const url = request.nextUrl.clone()
     url.pathname = "/app"
     return NextResponse.redirect(url)
